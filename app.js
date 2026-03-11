@@ -994,6 +994,10 @@ function drawCell(x, y, cell) {
       ctx.drawImage(assets.activityFloors[tileInfo.floorAssetKey], screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
 
+    if (tileInfo.walkable && tileInfo.token !== "RM") {
+      drawActivityFloorMarker(screenX, screenY, tileInfo.token);
+    }
+
     if (!tileInfo.walkable) {
       ctx.fillStyle = "rgba(16, 12, 9, 0.34)";
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
@@ -1014,6 +1018,33 @@ function drawCell(x, y, cell) {
 
   ctx.strokeStyle = "rgba(242, 231, 207, 0.05)";
   ctx.strokeRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+}
+
+function drawActivityFloorMarker(screenX, screenY, token) {
+  const paletteByToken = {
+    CK: {
+      fill: "rgba(176, 92, 28, 0.72)",
+      stroke: "rgba(255, 219, 172, 0.9)",
+    },
+    JR: {
+      fill: "rgba(108, 76, 44, 0.72)",
+      stroke: "rgba(239, 212, 176, 0.9)",
+    },
+  };
+  const palette = paletteByToken[token];
+
+  if (!palette) {
+    return;
+  }
+
+  ctx.fillStyle = palette.fill;
+  ctx.fillRect(screenX + 4, screenY + 4, 18, 14);
+  ctx.strokeStyle = palette.stroke;
+  ctx.strokeRect(screenX + 4.5, screenY + 4.5, 17, 13);
+  ctx.fillStyle = "#fff4dc";
+  ctx.font = "bold 10px monospace";
+  ctx.textBaseline = "middle";
+  ctx.fillText(token, screenX + 7, screenY + 11);
 }
 
 function drawNpc() {
