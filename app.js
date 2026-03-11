@@ -10,10 +10,17 @@ const COMFORT_THRESHOLD = 70;
 const EMPTY_ENTITY = "  ";
 
 const FLOOR_GLYPHS = {
-  RM: { label: "piso bordado", room: true, floorAssetKey: null },
-  CR: { label: "piso so andar", room: false, floorAssetKey: null, fixedVariant: "walk_only_center", walkable: true },
-  CK: { label: "piso de comida", room: true, floorAssetKey: "cook" },
-  JR: { label: "piso de jarro", room: true, floorAssetKey: "make_jar" },
+  RM: { label: "piso bordado", room: true, borderRoom: true, floorAssetKey: null },
+  CR: {
+    label: "piso so andar",
+    room: false,
+    borderRoom: true,
+    floorAssetKey: null,
+    fixedVariant: "walk_only_center",
+    walkable: true,
+  },
+  CK: { label: "piso de comida", room: true, borderRoom: true, floorAssetKey: "cook" },
+  JR: { label: "piso de jarro", room: true, borderRoom: true, floorAssetKey: "make_jar" },
   WL: { label: "parede direta" },
 };
 
@@ -1112,7 +1119,7 @@ function isRoomFloorToken(x, y) {
   }
 
   const glyph = FLOOR_GLYPHS[state.world.cells[y][x].floor];
-  return Boolean(glyph && glyph.room);
+  return Boolean(glyph && glyph.borderRoom);
 }
 
 function isNpcWalkable(x, y) {
