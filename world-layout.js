@@ -5,7 +5,7 @@ window.WORLD_LAYOUT = [
   },
   {
     entity: ["  ", "  ", "  ", "PL", "  ", "  "],
-    floor: ["RM", "CR", "CR", "CR", "CR", "RM"],
+    floor: ["RM", "RM", "CR", "CR", "RM", "RM"],
   },
   {
     entity: ["  ", "  ", "  ", "  ", "  ", "  "],
@@ -29,10 +29,34 @@ window.WORLD_LAYOUT = [
   },
   {
     entity: ["  ", "  ", "  ", "  ", "  ", "  "],
-    floor: ["RM", "CK", "CK", "CR", "JR", "RM"],
+    floor: ["RM", "CK", "CK", "CR", "CR", "RM"],
   },
   {
     entity: ["  ", "  ", "  ", "  ", "  ", "  "],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "RM", "RM", "RM", "CR", "RM"],
   },
+  {
+    entity: ["  ", "  ", "  ", "  ", "  ", "  "],
+    floor: ["WL", "WL", "WL", "RM", "CR", "RM"],
+  },
+  {
+    entity: ["  ", "  ", "  ", "  ", "  ", "  "],
+    floor: ["RM", "RM", "RM", "RM", "CR", "RM"],
+  },
+  {
+    entity: ["  ", "  ", "  ", "  ", "  ", "  "],
+    floor: ["RM", "RM", "RM", "RM", "CR", "RM"],
+  }, 
+  {
+    entity: ["  ", "  ", "  ", "  ", "  ", "  "],
+    floor: ["RM", "CR", "CR", "CR", "CR", "RM"],
+  },
+    {
+    entity: ["  ", "  ", "  ", "  ", "  ", "  "],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  }, 
+      {
+    entity: ["  ", "  ", "  ", "  ", "  ", "  "],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  }, 
 ];
