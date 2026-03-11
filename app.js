@@ -5,6 +5,7 @@ const WALK_DURATION_MS = 280;
 const NEED_DECAY_MS = 12000;
 const ACTIVITY_COOLDOWN_MS = 4200;
 const ACTIVITY_VISUAL_MS = 1400;
+const EAT_DURATION_MS = 2600;
 const COMFORT_THRESHOLD = 70;
 const EMPTY_ENTITY = "  ";
 
@@ -29,9 +30,9 @@ const AI_MODE_META = {
       "Todos os estados estao confortaveis. O NPC caminha sozinho entre tiles adjacentes, com animacao passo a passo.",
   },
   feeding: {
-    title: "buscar comida",
+    title: "comer",
     summary:
-      "A saciedade caiu. O NPC anda tile por tile ate um dos dois tiles CK e so cozinha ali.",
+      "A saciedade caiu. O NPC ativa o balao eat, vai ao bau por um tile adjacente, pega comida e para para comer em um tile RM livre.",
   },
   decorating: {
     title: "buscar decoracao",
@@ -71,19 +72,19 @@ const ACTIVITY_DEFS = [
     floorAssetKey: "cook",
     balloonAssetKey: "cook",
     tileToken: "CK",
-    hint: "So pode acontecer sobre tiles CK. Recursos podem vir do bau CH infinito.",
+    hint: "So pode acontecer sobre tiles CK. O NPC pega ingredientes no bau CH e depois cozinha no CK.",
   },
 ];
 
-const ACTIVITY_ASSET_PATHS = {
-  cook: {
-    floor: "assets/atividades/cook_floor.png",
-    balloon: "assets/atividades/cook_balloon.png",
-  },
-  make_jar: {
-    floor: "assets/atividades/make_jar_floor.png",
-    balloon: "assets/atividades/make_jar_balloon.png",
-  },
+const ACTIVITY_FLOOR_PATHS = {
+  cook: "assets/atividades/cook_floor.png",
+  make_jar: "assets/atividades/make_jar_floor.png",
+};
+
+const BALLOON_ASSET_PATHS = {
+  cook: "assets/baloon/cook.png",
+  make_jar: "assets/baloon/make_jar.png",
+  eat: "assets/baloon/eat.png",
 };
 
 const ENTITY_ASSET_PATHS = {
@@ -179,6 +180,7 @@ const WORLD_LAYOUT = [
 ];
 
 const WORLD_MAP_RAW = buildWorldRaw(WORLD_LAYOUT);
+let copyMapFeedbackTimer = 0;
 
 const dom = {
   canvas: document.getElementById("game-canvas"),
@@ -190,6 +192,7 @@ const dom = {
   activityCards: document.getElementById("activity-cards"),
   activityView: document.getElementById("activity-view"),
   terminalView: document.getElementById("terminal-view"),
+  copyMapButton: document.getElementById("copy-map-button"),
   legendView: document.getElementById("legend-view"),
   stateView: document.getElementById("state-view"),
   logList: document.getElementById("log-list"),
@@ -232,6 +235,7 @@ const state = {
   lastDirection: null,
   aiMode: "wandering",
   lastActivityId: null,
+  task: null,
   motion: null,
   activityVisual: null,
   uiDirty: true,
@@ -241,6 +245,7 @@ bootstrap();
 
 async function bootstrap() {
   await loadAssets();
+  bindUiEvents();
   appendLog("Mapa inicial 6 x 9 carregado com camadas separadas de floor e entity.");
   appendLog("Tiles JR e CK definem os unicos pontos validos para fazer jarro e comida.");
   appendLog("O bau CH guarda jarros infinitamente e tambem serve como fonte infinita de recursos.");
@@ -248,6 +253,59 @@ async function bootstrap() {
   renderUi();
   state.uiDirty = false;
   requestAnimationFrame(loop);
+}
+
+function bindUiEvents() {
+  dom.copyMapButton?.addEventListener("click", () => {
+    void handleCopyMapClick();
+  });
+}
+
+async function handleCopyMapClick() {
+  const rawMap = serializeWorldToRaw();
+  const copied = await copyTextToClipboard(rawMap);
+
+  if (copied) {
+    appendLog("Mapa RAW copiado para a area de transferencia.");
+    setCopyButtonLabel("Copiado");
+    return;
+  }
+
+  appendLog("Nao foi possivel copiar o mapa RAW automaticamente.");
+  setCopyButtonLabel("Falhou");
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      // Fallback abaixo para navegadores que bloqueiam clipboard.writeText.
+    }
+  }
+
+  dom.terminalView.focus();
+  dom.terminalView.select();
+  dom.terminalView.setSelectionRange(0, dom.terminalView.value.length);
+
+  try {
+    return document.execCommand("copy");
+  } catch (error) {
+    return false;
+  }
+}
+
+function setCopyButtonLabel(label) {
+  if (!dom.copyMapButton) {
+    return;
+  }
+
+  dom.copyMapButton.textContent = label;
+  clearTimeout(copyMapFeedbackTimer);
+  copyMapFeedbackTimer = window.setTimeout(() => {
+    dom.copyMapButton.textContent = "Copiar mapa";
+  }, 1600);
 }
 
 function buildWorldRaw(layout) {
@@ -386,6 +444,7 @@ function loop(timestamp) {
 
   updateNpcMotion(delta);
   updateActivityVisual(delta);
+  updateTask(delta);
 
   while (state.elapsedMs >= REAL_MS_PER_YEAR) {
     state.elapsedMs -= REAL_MS_PER_YEAR;
@@ -461,6 +520,17 @@ function updateActivityVisual(delta) {
   }
 }
 
+function updateTask(delta) {
+  if (!state.task || state.task.type !== "eat" || state.task.stage !== "eating") {
+    return;
+  }
+
+  state.task.remainingMs = Math.max(0, state.task.remainingMs - delta);
+  if (state.task.remainingMs === 0) {
+    finishEatingTask();
+  }
+}
+
 function runNpcTurn() {
   if (state.motion) {
     return;
@@ -471,13 +541,29 @@ function runNpcTurn() {
     return;
   }
 
+  if (state.task) {
+    runTaskTurn();
+    return;
+  }
+
   syncAiMode();
-  const activityId = activityForMode(state.aiMode);
 
   if (state.aiMode === "resting") {
     restTurn();
     return;
   }
+
+  if (state.aiMode === "feeding") {
+    startEatingTask();
+    return;
+  }
+
+  if (shouldStartCookingTask()) {
+    startCookingTask();
+    return;
+  }
+
+  const activityId = activityForMode(state.aiMode);
 
   if (activityId && isActivityAllowedAtCurrentTile(activityId)) {
     if (state.activityCooldownMs === 0 && performActivity(activityId, { source: "ai" })) {
@@ -494,6 +580,157 @@ function runNpcTurn() {
   }
 
   appendLog("O NPC ficou sem tiles adjacentes livres para caminhar.");
+}
+
+function shouldStartCookingTask() {
+  return state.aiMode === "wandering" && state.activityCooldownMs === 0 && randomInt(1, 12) === 1;
+}
+
+function startEatingTask() {
+  state.task = {
+    type: "eat",
+    stage: "to_chest",
+    balloonKey: "eat",
+    remainingMs: 0,
+  };
+  state.uiDirty = true;
+  appendLog("A IA ativou o balao eat e vai ao bau pegar comida.");
+}
+
+function startCookingTask() {
+  state.task = {
+    type: "cook",
+    stage: "to_chest",
+    balloonKey: "cook",
+  };
+  state.uiDirty = true;
+  appendLog("A IA ativou o balao cook e vai ao bau pegar ingredientes.");
+}
+
+function clearTask() {
+  state.task = null;
+  state.uiDirty = true;
+}
+
+function runTaskTurn() {
+  if (!state.task) {
+    return;
+  }
+
+  if (state.task.type === "eat") {
+    runEatTaskTurn();
+    return;
+  }
+
+  if (state.task.type === "cook") {
+    runCookTaskTurn();
+  }
+}
+
+function runEatTaskTurn() {
+  const { x, y } = state.character.fisico.pos;
+
+  if (state.task.stage === "to_chest") {
+    if (isAdjacentToEntityToken(x, y, "CH")) {
+      state.character.inventario.item_carregado = "FOOD";
+      if (isValidEatingTile(x, y)) {
+        state.task.stage = "eating";
+        state.task.remainingMs = EAT_DURATION_MS;
+        appendLog("O NPC pegou comida no bau e parou para comer.");
+      } else {
+        state.task.stage = "to_spot";
+        appendLog("O NPC pegou comida no bau e vai buscar um tile RM livre para comer.");
+      }
+      state.uiDirty = true;
+      return;
+    }
+
+    const direction = chooseDirectionToAdjacentChest();
+    if (direction) {
+      beginNpcMove(direction);
+      return;
+    }
+
+    appendLog("O NPC quer comer, mas nao encontrou caminho ate o bau.");
+    return;
+  }
+
+  if (state.task.stage === "to_spot") {
+    if (isValidEatingTile(x, y)) {
+      state.task.stage = "eating";
+      state.task.remainingMs = EAT_DURATION_MS;
+      state.uiDirty = true;
+      appendLog("O NPC encontrou um tile livre e comecou a comer.");
+      return;
+    }
+
+    const direction = chooseDirectionToEatingTile();
+    if (direction) {
+      beginNpcMove(direction);
+      return;
+    }
+
+    state.task.stage = "eating";
+    state.task.remainingMs = EAT_DURATION_MS;
+    state.uiDirty = true;
+    appendLog("O NPC nao encontrou outro tile neutro e vai comer onde esta.");
+    return;
+  }
+}
+
+function runCookTaskTurn() {
+  const { x, y } = state.character.fisico.pos;
+
+  if (state.task.stage === "to_chest") {
+    if (isAdjacentToEntityToken(x, y, "CH")) {
+      state.character.inventario.item_carregado = "ING";
+      state.task.stage = "to_kitchen";
+      state.uiDirty = true;
+      appendLog("O NPC pegou ingredientes no bau e vai para o CK cozinhar.");
+      return;
+    }
+
+    const direction = chooseDirectionToAdjacentChest();
+    if (direction) {
+      beginNpcMove(direction);
+      return;
+    }
+
+    appendLog("O NPC quer cozinhar, mas nao encontrou caminho ate o bau.");
+    return;
+  }
+
+  if (state.task.stage === "to_kitchen") {
+    if (isActivityAllowedAtCurrentTile("fazer comida")) {
+      if (performActivity("fazer comida", { source: "ai" })) {
+        state.character.inventario.item_carregado = null;
+        clearTask();
+        state.activityCooldownMs = ACTIVITY_COOLDOWN_MS;
+      }
+      return;
+    }
+
+    const direction = chooseDirectionToActivityTile("fazer comida", "feeding");
+    if (direction) {
+      beginNpcMove(direction);
+      return;
+    }
+
+    appendLog("O NPC esta com ingredientes, mas nao encontrou caminho ate um tile CK.");
+  }
+}
+
+function finishEatingTask() {
+  if (!state.task || state.task.type !== "eat") {
+    return;
+  }
+
+  adjustStatus("saciedade", 22);
+  adjustStatus("felicidade", 1);
+  state.character.inventario.item_carregado = null;
+  clearTask();
+  state.activityCooldownMs = Math.max(state.activityCooldownMs, ACTIVITY_COOLDOWN_MS);
+  appendLog("O NPC terminou de comer.");
 }
 
 function runJarPlacementTurn() {
@@ -631,6 +868,29 @@ function chooseDirectionToAdjacentChest() {
   return null;
 }
 
+function chooseDirectionToActivityTile(activityId, mode) {
+  const targetToken = getRequiredTileToken(activityId);
+  if (!targetToken) {
+    return null;
+  }
+
+  const path = findPathToFloorToken(targetToken, mode);
+  if (path && path.length > 1) {
+    return directionBetween(path[0], path[1]);
+  }
+
+  return null;
+}
+
+function chooseDirectionToEatingTile() {
+  const path = findPathToMatchingTile((x, y) => isValidEatingTile(x, y), "wandering");
+  if (path && path.length > 1) {
+    return directionBetween(path[0], path[1]);
+  }
+
+  return null;
+}
+
 function directionPriorityForMode(mode) {
   const priorityByMode = {
     feeding: ["down", "right", "left", "up"],
@@ -688,43 +948,16 @@ function findPathToFloorToken(tileToken, mode) {
     return null;
   }
 
-  const start = state.character.fisico.pos;
-  if (state.world.cells[start.y][start.x].floor === tileToken) {
-    return [{ x: start.x, y: start.y }];
-  }
-
-  const priorities = directionPriorityForMode(mode);
-  const queue = [{ x: start.x, y: start.y }];
-  const parents = new Map();
-  const visited = new Set([cellKey(start.x, start.y)]);
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    const neighbors = neighborsByPriority(current.x, current.y, priorities);
-
-    for (const neighbor of neighbors) {
-      const key = cellKey(neighbor.x, neighbor.y);
-      if (visited.has(key) || !isNpcWalkable(neighbor.x, neighbor.y)) {
-        continue;
-      }
-
-      visited.add(key);
-      parents.set(key, current);
-
-      if (state.world.cells[neighbor.y][neighbor.x].floor === tileToken) {
-        return buildPathFromParents(start, neighbor, parents);
-      }
-
-      queue.push(neighbor);
-    }
-  }
-
-  return null;
+  return findPathToMatchingTile((x, y) => state.world.cells[y][x].floor === tileToken, mode);
 }
 
 function findPathToAdjacentEntityToken(entityToken, mode) {
+  return findPathToMatchingTile((x, y) => isAdjacentToEntityToken(x, y, entityToken), mode);
+}
+
+function findPathToMatchingTile(predicate, mode) {
   const start = state.character.fisico.pos;
-  if (isAdjacentToEntityToken(start.x, start.y, entityToken)) {
+  if (predicate(start.x, start.y)) {
     return [{ x: start.x, y: start.y }];
   }
 
@@ -746,7 +979,7 @@ function findPathToAdjacentEntityToken(entityToken, mode) {
       visited.add(key);
       parents.set(key, current);
 
-      if (isAdjacentToEntityToken(neighbor.x, neighbor.y, entityToken)) {
+      if (predicate(neighbor.x, neighbor.y)) {
         return buildPathFromParents(start, neighbor, parents);
       }
 
@@ -905,6 +1138,16 @@ function getAdjacentJarPlacementTarget() {
   }) || null;
 }
 
+function isValidEatingTile(x, y) {
+  if (!isInsideWorld(x, y)) {
+    return false;
+  }
+
+  const cell = state.world.cells[y][x];
+  const tileInfo = getTileInfo(x, y);
+  return tileInfo.walkable && cell.floor === "RM";
+}
+
 function tryPlaceCarriedJarAdjacent() {
   if (state.character.inventario.item_carregado !== "JA") {
     return false;
@@ -989,8 +1232,8 @@ function performActivity(activityId, options = {}) {
 
   if (activity.id === "fazer comida") {
     adjustStatus("energia", succeeded ? -3 : -4);
-    adjustStatus("felicidade", succeeded ? 1 + likeBonus : -1);
-    adjustStatus("saciedade", succeeded ? 6 + qualityBonus : -2);
+    adjustStatus("felicidade", succeeded ? 2 + likeBonus : -1);
+    adjustStatus("saciedade", succeeded ? 0 : -1);
   }
 
   applyLowStatusConsequences();
@@ -1260,11 +1503,12 @@ function drawNpc() {
 }
 
 function drawActivityVisual(renderPosition) {
-  if (!state.activityVisual) {
+  const balloonKey = getVisibleBalloonKey();
+  if (!balloonKey) {
     return;
   }
 
-  const image = assets.activityBalloons[state.activityVisual.assetKey];
+  const image = assets.activityBalloons[balloonKey];
   if (!image) {
     return;
   }
@@ -1272,6 +1516,18 @@ function drawActivityVisual(renderPosition) {
   ctx.fillStyle = "rgba(18, 15, 12, 0.84)";
   ctx.fillRect(renderPosition.x + 14, renderPosition.y - 20, 20, 20);
   ctx.drawImage(image, renderPosition.x + 16, renderPosition.y - 18, 16, 16);
+}
+
+function getVisibleBalloonKey() {
+  if (state.task?.balloonKey) {
+    return state.task.balloonKey;
+  }
+
+  if (state.activityVisual?.assetKey) {
+    return state.activityVisual.assetKey;
+  }
+
+  return null;
 }
 
 function getNpcRenderPosition() {
@@ -1432,16 +1688,19 @@ function hasAdjacentRoomFloor(x, y) {
 
 function renderBehavior() {
   const aiMeta = AI_MODE_META[state.aiMode];
+  const taskMeta = taskPresentation();
   const motionLine = state.motion
     ? ` Passo atual: (${state.motion.from.x}, ${state.motion.from.y}) -> (${state.motion.to.x}, ${state.motion.to.y}).`
     : "";
   const carryLine =
     state.character.inventario.item_carregado === "JA"
       ? " O NPC esta carregando um jarro e vai coloca-lo num tile RM livre ou no bau."
-      : "";
+      : state.character.inventario.item_carregado
+        ? ` O NPC esta carregando ${describeCarriedItem(state.character.inventario.item_carregado)}.`
+        : "";
 
-  dom.aiMode.textContent = aiMeta.title;
-  dom.aiSummary.textContent = `${aiMeta.summary}${motionLine}${carryLine}`;
+  dom.aiMode.textContent = taskMeta?.title || aiMeta.title;
+  dom.aiSummary.textContent = `${taskMeta?.summary || aiMeta.summary}${motionLine}${carryLine}`;
 }
 
 function renderStatus() {
@@ -1500,7 +1759,7 @@ function renderMeta() {
     },
     {
       label: "Item carregado",
-      value: state.character.inventario.item_carregado || "nenhum",
+      value: describeCarriedItem(state.character.inventario.item_carregado),
     },
     {
       label: "Jarros no bau",
@@ -1533,7 +1792,7 @@ function renderActivityCards() {
     });
     const activeClass = state.lastActivityId === activity.id ? " active" : "";
     const iconMarkup = activity.floorAssetKey
-      ? `<img class="activity-icon" src="${ACTIVITY_ASSET_PATHS[activity.floorAssetKey].floor}" alt="${activity.label}" />`
+      ? `<img class="activity-icon" src="${ACTIVITY_FLOOR_PATHS[activity.floorAssetKey]}" alt="${activity.label}" />`
       : `<span class="activity-placeholder">TXT</span>`;
     const statsLabel = record
       ? `gostar ${record.taxa_gostar} | qualidade ${record.taxa_qualidade}`
@@ -1559,11 +1818,11 @@ function renderActivities() {
 
   if (activityRecords.length === 0) {
     dom.activityView.textContent =
-      "A IA ainda nao escolheu nenhuma atividade.\n\nA viewport usa animacao de caminhada por tile.\nComida so acontece em CK, jarro so acontece em JR e o bau CH guarda infinitamente.";
+      "A IA ainda nao escolheu nenhuma atividade.\n\nA viewport usa animacao de caminhada por tile.\nComer usa o balao eat com comida do bau, e cozinhar usa o balao cook com ingredientes do bau.";
     return;
   }
 
-  const chestLine = `Bau CH\n  jarros guardados: ${state.storage.chestStoredJars}\n  recursos: infinitos`;
+  const chestLine = `Bau CH\n  jarros guardados: ${state.storage.chestStoredJars}\n  recursos: infinitos\n  comida: infinita`;
 
   dom.activityView.textContent = [chestLine]
     .concat(
@@ -1600,6 +1859,8 @@ function renderLegend() {
     "  JR = tile de jarro; so faz decoracao ali",
     "  CH = bau infinito para guardar jarros e buscar recursos",
     "  JA = jarro colocado sobre um tile RM; bloqueia passagem",
+    "  eat = pega comida ao lado do bau e come parado em tile RM",
+    "  cook = pega ingredientes ao lado do bau e vai ao CK cozinhar",
     "  WL = parede direta do mapa",
     "  Apenas a variante center e caminhavel",
     "  O RAW segue por tile; a viewport interpola cada passo visual",
@@ -1630,11 +1891,65 @@ function characterSnapshot() {
       : null,
     ia: {
       modo: state.aiMode,
+      tarefa: state.task,
       direcao_anterior: state.lastDirection,
       cooldown_atividade_ms: state.activityCooldownMs,
       ultima_atividade: state.lastActivityId,
     },
   };
+}
+
+function taskPresentation() {
+  if (!state.task) {
+    return null;
+  }
+
+  if (state.task.type === "eat") {
+    if (state.task.stage === "to_chest") {
+      return {
+        title: "buscar comida",
+        summary: "O NPC ativou o balao eat e esta indo ao bau por um tile adjacente para pegar comida.",
+      };
+    }
+
+    if (state.task.stage === "to_spot") {
+      return {
+        title: "procurar lugar para comer",
+        summary: "O NPC ja pegou comida no bau e esta buscando um tile RM livre para ficar parado enquanto come.",
+      };
+    }
+
+    return {
+      title: "comendo",
+      summary: "O NPC esta parado com o balao eat acima da cabeca enquanto termina a refeicao.",
+    };
+  }
+
+  if (state.task.type === "cook") {
+    if (state.task.stage === "to_chest") {
+      return {
+        title: "buscar ingredientes",
+        summary: "O NPC ativou o balao cook e esta indo ao bau por um tile adjacente buscar ingredientes.",
+      };
+    }
+
+    return {
+      title: "indo cozinhar",
+      summary: "O NPC ja pegou ingredientes no bau e esta indo para um tile CK cozinhar.",
+    };
+  }
+
+  return null;
+}
+
+function describeCarriedItem(itemKey) {
+  const labels = {
+    JA: "jarro",
+    FOOD: "comida",
+    ING: "ingredientes",
+  };
+
+  return labels[itemKey] || "nenhum";
 }
 
 function renderLog() {
@@ -1678,7 +1993,7 @@ function clamp(value, min, max) {
 }
 
 async function loadAssets() {
-  const [borderEntries, leftFrames, rightFrames, activityEntries, entityEntries] = await Promise.all([
+  const [borderEntries, leftFrames, rightFrames, floorEntries, balloonEntries, entityEntries] = await Promise.all([
     Promise.all(
       Object.entries(BORDER_TILE_PATHS).map(async ([key, src]) => {
         return [key, await loadImage(src)];
@@ -1687,14 +2002,13 @@ async function loadAssets() {
     Promise.all(NPC_SPRITES.esquerda.map((src) => loadImage(src))),
     Promise.all(NPC_SPRITES.direita.map((src) => loadImage(src))),
     Promise.all(
-      Object.entries(ACTIVITY_ASSET_PATHS).map(async ([key, paths]) => {
-        return [
-          key,
-          {
-            floor: await loadImage(paths.floor),
-            balloon: await loadImage(paths.balloon),
-          },
-        ];
+      Object.entries(ACTIVITY_FLOOR_PATHS).map(async ([key, src]) => {
+        return [key, await loadImage(src)];
+      })
+    ),
+    Promise.all(
+      Object.entries(BALLOON_ASSET_PATHS).map(async ([key, src]) => {
+        return [key, await loadImage(src)];
       })
     ),
     Promise.all(
@@ -1708,9 +2022,12 @@ async function loadAssets() {
     assets.border[key] = image;
   });
 
-  activityEntries.forEach(([key, images]) => {
-    assets.activityFloors[key] = images.floor;
-    assets.activityBalloons[key] = images.balloon;
+  floorEntries.forEach(([key, image]) => {
+    assets.activityFloors[key] = image;
+  });
+
+  balloonEntries.forEach(([key, image]) => {
+    assets.activityBalloons[key] = image;
   });
 
   entityEntries.forEach(([key, image]) => {

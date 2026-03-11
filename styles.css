@@ -109,6 +109,14 @@ pre {
   margin-bottom: 14px;
 }
 
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .panel-top h2 {
   font-size: 1.3rem;
 }
@@ -121,6 +129,25 @@ pre {
   padding: 10px 12px;
   background: rgba(215, 157, 78, 0.08);
   color: var(--text-soft);
+}
+
+.copy-button {
+  border: 1px solid rgba(140, 168, 109, 0.34);
+  border-radius: 18px;
+  padding: 10px 14px;
+  background: rgba(140, 168, 109, 0.12);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: background 140ms ease, transform 140ms ease, border-color 140ms ease;
+}
+
+.copy-button:hover {
+  background: rgba(140, 168, 109, 0.2);
+  border-color: rgba(140, 168, 109, 0.5);
+}
+
+.copy-button:active {
+  transform: translateY(1px);
 }
 
 .time-chip strong,
