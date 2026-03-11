@@ -262,6 +262,75 @@ pre {
   font-size: 1rem;
 }
 
+.activity-cards {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.activity-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(239, 211, 163, 0.08);
+  background: rgba(18, 15, 12, 0.72);
+}
+
+.activity-card.active {
+  border-color: rgba(215, 157, 78, 0.34);
+  background: rgba(53, 38, 25, 0.72);
+}
+
+.activity-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.activity-card-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.activity-card-copy strong {
+  font-size: 0.98rem;
+}
+
+.activity-card-copy span,
+.activity-card small {
+  color: var(--text-dim);
+}
+
+.activity-card p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.4;
+}
+
+.activity-icon,
+.activity-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 211, 163, 0.08);
+  background: rgba(10, 12, 11, 0.88);
+  flex: 0 0 auto;
+}
+
+.activity-icon {
+  image-rendering: pixelated;
+  padding: 6px;
+}
+
+.activity-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--text-soft);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
 .terminal-view,
 .mono-box {
   width: 100%;

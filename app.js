@@ -1,8 +1,10 @@
 const TILE_SIZE = 48;
 const REAL_MS_PER_YEAR = 5 * 60 * 1000;
-const NPC_STEP_MS = 850;
+const NPC_STEP_MS = 520;
+const WALK_DURATION_MS = 280;
 const NEED_DECAY_MS = 12000;
 const ACTIVITY_COOLDOWN_MS = 4200;
+const ACTIVITY_VISUAL_MS = 1400;
 const COMFORT_THRESHOLD = 70;
 const EMPTY_ENTITY = "  ";
 
@@ -20,30 +22,53 @@ const AI_MODE_META = {
   wandering: {
     title: "wandering",
     summary:
-      "Todos os estados estao confortaveis. O NPC caminha aleatoriamente entre tiles adjacentes livres.",
+      "Todos os estados estao confortaveis. O NPC caminha sozinho entre tiles adjacentes, com animacao passo a passo.",
   },
   feeding: {
     title: "buscar comida",
     summary:
-      "A saciedade caiu. O NPC tenta descer pelo mapa e cozinhar quando a rota estabiliza.",
+      "A saciedade caiu. O NPC avanca tile por tile ate estabilizar e tenta cozinhar quando chega na zona inferior.",
   },
   decorating: {
     title: "buscar decoracao",
     summary:
-      "A felicidade caiu. O NPC tenta subir pelo mapa e decorar quando encontra um ponto util.",
+      "A felicidade caiu. O NPC sobe tile por tile e tenta decorar quando encontra uma zona melhor no mapa.",
   },
   resting: {
     title: "descansando",
     summary:
-      "Energia ou saude baixas. O NPC para para se recuperar antes de voltar a circular.",
+      "Energia ou saude baixas. O NPC interrompe a caminhada, descansa e depois volta ao circuito.",
   },
 };
 
 const ACTIVITY_DEFS = [
-  { id: "organizar", label: "Organizar", successLabel: "organizou o espaco" },
-  { id: "fazer decoracao", label: "Fazer decoracao", successLabel: "decorou a sala" },
-  { id: "fazer comida", label: "Fazer comida", successLabel: "preparou comida" },
+  {
+    id: "organizar",
+    label: "Organizar",
+    successLabel: "organizou o espaco",
+    assetKey: null,
+    hint: "Mantem o ambiente em ordem.",
+  },
+  {
+    id: "fazer decoracao",
+    label: "Fazer decoracao",
+    successLabel: "decorou a sala",
+    assetKey: "make_jar",
+    hint: "Usa o asset make_jar.png.",
+  },
+  {
+    id: "fazer comida",
+    label: "Fazer comida",
+    successLabel: "preparou comida",
+    assetKey: "cook",
+    hint: "Usa o asset cook.png.",
+  },
 ];
+
+const ACTIVITY_ICON_PATHS = {
+  cook: "assets/atividades/cook.png",
+  make_jar: "assets/atividades/make_jar.png",
+};
 
 const FAVORITE_OBJECTS = [
   "planta",
@@ -141,6 +166,7 @@ const dom = {
   favoriteObject: document.getElementById("favorite-object"),
   statusGrid: document.getElementById("status-grid"),
   metaGrid: document.getElementById("meta-grid"),
+  activityCards: document.getElementById("activity-cards"),
   activityView: document.getElementById("activity-view"),
   terminalView: document.getElementById("terminal-view"),
   legendView: document.getElementById("legend-view"),
@@ -158,10 +184,11 @@ const assets = {
     esquerda: [],
     direita: [],
   },
+  activityIcons: {},
 };
 
 const baseWorld = parseRawMap(WORLD_MAP_RAW);
-const npcSpawn = extractEntitySpawn(baseWorld, "PL") || { x: 2, y: 0 };
+const npcSpawn = extractEntitySpawn(baseWorld, "PL") || { x: 3, y: 1 };
 
 const state = {
   world: baseWorld,
@@ -176,9 +203,11 @@ const state = {
   aiClockMs: 0,
   needCycles: 0,
   moveCount: 0,
-  playerFrame: 0,
   lastDirection: null,
   aiMode: "wandering",
+  lastActivityId: null,
+  motion: null,
+  activityVisual: null,
   uiDirty: true,
 };
 
@@ -186,8 +215,8 @@ bootstrap();
 
 async function bootstrap() {
   await loadAssets();
-  appendLog("Prototipo iniciado com um NPC autonomo de 18 anos.");
-  appendLog("Movimento manual removido. A IA anda sozinha por tiles adjacentes.");
+  appendLog("Mapa inicial 6 x 9 carregado com camadas separadas de floor e entity.");
+  appendLog("Movimento visual agora e animado tile por tile, sem glide unico.");
   renderUi();
   state.uiDirty = false;
   requestAnimationFrame(loop);
@@ -324,6 +353,9 @@ function loop(timestamp) {
   state.aiClockMs += delta;
   state.activityCooldownMs = Math.max(0, state.activityCooldownMs - delta);
 
+  updateNpcMotion(delta);
+  updateActivityVisual(delta);
+
   while (state.elapsedMs >= REAL_MS_PER_YEAR) {
     state.elapsedMs -= REAL_MS_PER_YEAR;
     state.character.status.age += 1;
@@ -335,14 +367,18 @@ function loop(timestamp) {
     applyNaturalNeedDecay();
   }
 
-  while (state.aiClockMs >= NPC_STEP_MS) {
-    state.aiClockMs -= NPC_STEP_MS;
-    runNpcTurn();
+  if (!state.motion) {
+    while (state.aiClockMs >= NPC_STEP_MS) {
+      state.aiClockMs -= NPC_STEP_MS;
+      runNpcTurn();
+    }
   }
 
   const remainingSeconds = Math.max(0, Math.floor((REAL_MS_PER_YEAR - state.elapsedMs) / 1000));
+  const shouldRender =
+    state.uiDirty || remainingSeconds !== state.lastVisibleSecond || Boolean(state.motion) || Boolean(state.activityVisual);
 
-  if (state.uiDirty || remainingSeconds !== state.lastVisibleSecond) {
+  if (shouldRender) {
     state.lastVisibleSecond = remainingSeconds;
     renderUi();
     state.uiDirty = false;
@@ -351,7 +387,54 @@ function loop(timestamp) {
   requestAnimationFrame(loop);
 }
 
+function updateNpcMotion(delta) {
+  if (!state.motion) {
+    return;
+  }
+
+  state.motion.elapsedMs += delta;
+  if (state.motion.elapsedMs < state.motion.durationMs) {
+    return;
+  }
+
+  finalizeNpcMove();
+}
+
+function finalizeNpcMove() {
+  if (!state.motion) {
+    return;
+  }
+
+  const motion = state.motion;
+  state.character.fisico.pos = { x: motion.to.x, y: motion.to.y };
+  state.lastDirection = motion.direction;
+  state.motion = null;
+
+  state.moveCount += 1;
+  applyStepCosts();
+
+  const tileInfo = getTileInfo(state.character.fisico.pos.x, state.character.fisico.pos.y);
+  appendLog(
+    `Passo concluido para (${state.character.fisico.pos.x}, ${state.character.fisico.pos.y}) em ${tileInfo.label}.`
+  );
+}
+
+function updateActivityVisual(delta) {
+  if (!state.activityVisual) {
+    return;
+  }
+
+  state.activityVisual.elapsedMs += delta;
+  if (state.activityVisual.elapsedMs >= state.activityVisual.durationMs) {
+    state.activityVisual = null;
+  }
+}
+
 function runNpcTurn() {
+  if (state.motion) {
+    return;
+  }
+
   syncAiMode();
 
   if (state.aiMode === "resting") {
@@ -368,7 +451,7 @@ function runNpcTurn() {
 
   const direction = chooseAutonomousDirection(state.aiMode);
   if (direction) {
-    moveNpc(direction);
+    beginNpcMove(direction);
     return;
   }
 
@@ -401,9 +484,9 @@ function resolveAiMode() {
   }
 
   const weakestNeed = [
-    { key: "saciedade", value: saciedade, mode: "feeding" },
-    { key: "felicidade", value: felicidade, mode: "decorating" },
-    { key: "energia", value: energia, mode: "resting" },
+    { value: saciedade, mode: "feeding" },
+    { value: felicidade, mode: "decorating" },
+    { value: energia, mode: "resting" },
   ].sort((left, right) => left.value - right.value)[0];
 
   return weakestNeed.mode;
@@ -542,14 +625,25 @@ function getAdjacentOptions() {
     .filter((option) => isNpcWalkable(option.target.x, option.target.y));
 }
 
-function moveNpc(direction) {
+function beginNpcMove(direction) {
   const target = getAdjacentOptions().find((option) => option.direction === direction);
   if (!target) {
     return false;
   }
 
-  state.character.fisico.pos = target.target;
-  state.lastDirection = direction;
+  state.motion = {
+    from: {
+      x: state.character.fisico.pos.x,
+      y: state.character.fisico.pos.y,
+    },
+    to: {
+      x: target.target.x,
+      y: target.target.y,
+    },
+    direction,
+    elapsedMs: 0,
+    durationMs: WALK_DURATION_MS,
+  };
 
   if (direction === "left") {
     state.character.fisico.direcao_olhar = "esquerda";
@@ -559,8 +653,11 @@ function moveNpc(direction) {
     state.character.fisico.direcao_olhar = "direita";
   }
 
-  state.moveCount += 1;
-  state.playerFrame = (state.playerFrame + 1) % Math.max(assets.npc.direita.length, 1);
+  state.uiDirty = true;
+  return true;
+}
+
+function applyStepCosts() {
   adjustStatus("energia", -1);
 
   if (state.moveCount % 2 === 0) {
@@ -572,8 +669,6 @@ function moveNpc(direction) {
   }
 
   applyLowStatusConsequences();
-  state.uiDirty = true;
-  return true;
 }
 
 function isInsideWorld(x, y) {
@@ -638,6 +733,8 @@ function performActivity(activityId, options = {}) {
   }
 
   applyLowStatusConsequences();
+  state.lastActivityId = activity.id;
+  startActivityVisual(activity);
 
   const prefix = options.source === "ai" ? "A IA escolheu: " : "";
   const statusLabel = succeeded ? "deu certo" : "falhou";
@@ -645,6 +742,19 @@ function performActivity(activityId, options = {}) {
   appendLog(
     `${prefix}${summary}. Resultado ${statusLabel} (${roll}/10), gostar ${record.taxa_gostar}, qualidade ${record.taxa_qualidade}.`
   );
+}
+
+function startActivityVisual(activity) {
+  if (!activity.assetKey || !assets.activityIcons[activity.assetKey]) {
+    return;
+  }
+
+  state.activityVisual = {
+    assetKey: activity.assetKey,
+    label: activity.label,
+    elapsedMs: 0,
+    durationMs: ACTIVITY_VISUAL_MS,
+  };
 }
 
 function getOrCreateActivityRecord(activityId) {
@@ -714,6 +824,7 @@ function renderUi() {
   renderBehavior();
   renderStatus();
   renderMeta();
+  renderActivityCards();
   renderActivities();
   renderTerminal();
   renderLegend();
@@ -775,24 +886,73 @@ function drawCell(x, y, cell) {
 }
 
 function drawNpc() {
-  const { x, y } = state.character.fisico.pos;
-  const facing = state.character.fisico.direcao_olhar;
-  const frames = assets.npc[facing];
-  const frame = frames[state.playerFrame] || frames[0];
-  const shadowX = x * TILE_SIZE + 10;
-  const shadowY = y * TILE_SIZE + 31;
+  const renderPosition = getNpcRenderPosition();
+  const frame = getNpcFrame();
+  const shadowX = renderPosition.x + 24;
+  const shadowY = renderPosition.y + 39;
 
   ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
   ctx.beginPath();
-  ctx.ellipse(shadowX + 14, shadowY + 8, 12, 7, 0, 0, Math.PI * 2);
+  ctx.ellipse(shadowX, shadowY, 12, 7, 0, 0, Math.PI * 2);
   ctx.fill();
 
   if (frame) {
-    ctx.drawImage(frame, x * TILE_SIZE + 4, y * TILE_SIZE - 4, 40, 40);
+    ctx.drawImage(frame, renderPosition.x + 4, renderPosition.y - 4, 40, 40);
   } else {
     ctx.fillStyle = "#f0c875";
-    ctx.fillRect(x * TILE_SIZE + 10, y * TILE_SIZE + 6, 24, 28);
+    ctx.fillRect(renderPosition.x + 10, renderPosition.y + 6, 24, 28);
   }
+
+  drawActivityVisual(renderPosition);
+}
+
+function drawActivityVisual(renderPosition) {
+  if (!state.activityVisual) {
+    return;
+  }
+
+  const image = assets.activityIcons[state.activityVisual.assetKey];
+  if (!image) {
+    return;
+  }
+
+  ctx.fillStyle = "rgba(18, 15, 12, 0.84)";
+  ctx.fillRect(renderPosition.x + 14, renderPosition.y - 20, 20, 20);
+  ctx.drawImage(image, renderPosition.x + 16, renderPosition.y - 18, 16, 16);
+}
+
+function getNpcRenderPosition() {
+  if (!state.motion) {
+    return {
+      x: state.character.fisico.pos.x * TILE_SIZE,
+      y: state.character.fisico.pos.y * TILE_SIZE,
+    };
+  }
+
+  return {
+    x: interpolatePixels(state.motion.from.x * TILE_SIZE, state.motion.to.x * TILE_SIZE, state.motion),
+    y: interpolatePixels(state.motion.from.y * TILE_SIZE, state.motion.to.y * TILE_SIZE, state.motion),
+  };
+}
+
+function interpolatePixels(from, to, motion) {
+  const delta = to - from;
+  const progress = Math.min(motion.elapsedMs, motion.durationMs);
+  return from + Math.round((delta * progress) / motion.durationMs);
+}
+
+function getNpcFrame() {
+  const frames = assets.npc[state.character.fisico.direcao_olhar];
+  if (!frames || frames.length === 0) {
+    return null;
+  }
+
+  if (!state.motion) {
+    return frames[0];
+  }
+
+  const frameIndex = Math.floor((state.motion.elapsedMs * frames.length) / state.motion.durationMs);
+  return frames[frameIndex % frames.length];
 }
 
 function getTileInfo(x, y) {
@@ -902,8 +1062,12 @@ function hasAdjacentRoomFloor(x, y) {
 
 function renderBehavior() {
   const aiMeta = AI_MODE_META[state.aiMode];
+  const motionLine = state.motion
+    ? ` Passo atual: (${state.motion.from.x}, ${state.motion.from.y}) -> (${state.motion.to.x}, ${state.motion.to.y}).`
+    : "";
+
   dom.aiMode.textContent = aiMeta.title;
-  dom.aiSummary.textContent = aiMeta.summary;
+  dom.aiSummary.textContent = `${aiMeta.summary}${motionLine}`;
 }
 
 function renderStatus() {
@@ -936,12 +1100,17 @@ function renderStatus() {
 function renderMeta() {
   const activitiesCount = state.character.preferencias.atividades_praticadas.length;
   const currentTile = getTileInfo(state.character.fisico.pos.x, state.character.fisico.pos.y);
+  const destinationLabel = state.motion ? `(${state.motion.to.x}, ${state.motion.to.y})` : "nenhum";
 
   dom.metaGrid.innerHTML = [
     { label: "Idade", value: `${state.character.status.age} anos` },
     {
-      label: "Posicao",
+      label: "Posicao logica",
       value: `(${state.character.fisico.pos.x}, ${state.character.fisico.pos.y})`,
+    },
+    {
+      label: "Destino visual",
+      value: destinationLabel,
     },
     {
       label: "Direcao",
@@ -959,6 +1128,10 @@ function renderMeta() {
       label: "Atividades ja praticadas",
       value: `${activitiesCount}`,
     },
+    {
+      label: "Em movimento",
+      value: state.motion ? "sim" : "nao",
+    },
   ]
     .map((item) => {
       return `
@@ -971,12 +1144,40 @@ function renderMeta() {
     .join("");
 }
 
+function renderActivityCards() {
+  dom.activityCards.innerHTML = ACTIVITY_DEFS.map((activity) => {
+    const record = state.character.preferencias.atividades_praticadas.find((item) => {
+      return item.atividade === activity.id;
+    });
+    const activeClass = state.lastActivityId === activity.id ? " active" : "";
+    const iconMarkup = activity.assetKey
+      ? `<img class="activity-icon" src="${ACTIVITY_ICON_PATHS[activity.assetKey]}" alt="${activity.label}" />`
+      : `<span class="activity-placeholder">TXT</span>`;
+    const statsLabel = record
+      ? `gostar ${record.taxa_gostar} | qualidade ${record.taxa_qualidade}`
+      : "ainda nao praticada";
+
+    return `
+      <article class="activity-card${activeClass}">
+        <div class="activity-card-head">
+          ${iconMarkup}
+          <div class="activity-card-copy">
+            <strong>${activity.label}</strong>
+            <span>${statsLabel}</span>
+          </div>
+        </div>
+        <p>${activity.hint}</p>
+      </article>
+    `;
+  }).join("");
+}
+
 function renderActivities() {
   const activityRecords = state.character.preferencias.atividades_praticadas;
 
   if (activityRecords.length === 0) {
     dom.activityView.textContent =
-      "A IA ainda nao escolheu nenhuma atividade.\n\nQuando a necessidade apertar:\n- comida melhora a saciedade\n- decoracao ajuda a felicidade\n- descanso recupera energia sem mover";
+      "A IA ainda nao escolheu nenhuma atividade.\n\nA viewport usa animacao de caminhada por tile.\nQuando a necessidade apertar, a IA troca para comida ou decoracao.";
     return;
   }
 
@@ -1011,7 +1212,7 @@ function renderLegend() {
     "  RM = piso com borda automatica",
     "  WL = parede direta do mapa",
     "  Apenas a variante center e caminhavel",
-    "  O NPC anda apenas para tiles adjacentes",
+    "  O RAW segue por tile; a viewport interpola cada passo visual",
   ].join("\n");
 }
 
@@ -1025,10 +1226,19 @@ function characterSnapshot() {
     fisico: state.character.fisico,
     preferencias: state.character.preferencias,
     conhecidos: state.character.conhecidos,
+    movimento_visual: state.motion
+      ? {
+          from: state.motion.from,
+          to: state.motion.to,
+          elapsed_ms: state.motion.elapsedMs,
+          duration_ms: state.motion.durationMs,
+        }
+      : null,
     ia: {
       modo: state.aiMode,
       direcao_anterior: state.lastDirection,
       cooldown_atividade_ms: state.activityCooldownMs,
+      ultima_atividade: state.lastActivityId,
     },
   };
 }
@@ -1074,7 +1284,7 @@ function clamp(value, min, max) {
 }
 
 async function loadAssets() {
-  const [borderEntries, leftFrames, rightFrames] = await Promise.all([
+  const [borderEntries, leftFrames, rightFrames, activityEntries] = await Promise.all([
     Promise.all(
       Object.entries(BORDER_TILE_PATHS).map(async ([key, src]) => {
         return [key, await loadImage(src)];
@@ -1082,10 +1292,19 @@ async function loadAssets() {
     ),
     Promise.all(NPC_SPRITES.esquerda.map((src) => loadImage(src))),
     Promise.all(NPC_SPRITES.direita.map((src) => loadImage(src))),
+    Promise.all(
+      Object.entries(ACTIVITY_ICON_PATHS).map(async ([key, src]) => {
+        return [key, await loadImage(src)];
+      })
+    ),
   ]);
 
   borderEntries.forEach(([key, image]) => {
     assets.border[key] = image;
+  });
+
+  activityEntries.forEach(([key, image]) => {
+    assets.activityIcons[key] = image;
   });
 
   assets.npc.esquerda = leftFrames.filter(Boolean);
