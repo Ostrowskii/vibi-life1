@@ -1883,14 +1883,6 @@ function characterSnapshot() {
     mundo: {
       jarros_no_bau: state.storage.chestStoredJars,
     },
-    movimento_visual: state.motion
-      ? {
-          from: state.motion.from,
-          to: state.motion.to,
-          elapsed_ms: state.motion.elapsedMs,
-          duration_ms: state.motion.durationMs,
-        }
-      : null,
     ia: {
       modo: state.aiMode,
       tarefa: state.task,
