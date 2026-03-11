@@ -11,6 +11,7 @@ const EMPTY_ENTITY = "  ";
 
 const FLOOR_GLYPHS = {
   RM: { label: "piso bordado", room: true, floorAssetKey: null },
+  CR: { label: "piso so andar", room: false, floorAssetKey: null, fixedVariant: "walk_only_center", walkable: true },
   CK: { label: "piso de comida", room: true, floorAssetKey: "cook" },
   JR: { label: "piso de jarro", room: true, floorAssetKey: "make_jar" },
   WL: { label: "parede direta" },
@@ -103,6 +104,7 @@ const FAVORITE_OBJECTS = [
 
 const BORDER_TILE_PATHS = {
   center: "assets/teste_chao_bordered/teste_chao_center.png",
+  walk_only_center: "assets/teste_chao_bordered/teste_chao_center_walk_only.png",
   edge_top: "assets/teste_chao_bordered/teste_chao_edge_top.png",
   edge_rgt: "assets/teste_chao_bordered/teste_chao_edge_rgt.png",
   edge_bot: "assets/teste_chao_bordered/teste_chao_edge_bot.png",
@@ -1392,7 +1394,7 @@ function drawCell(x, y, cell) {
   const screenY = y * TILE_SIZE;
   const tileInfo = getTileInfo(x, y);
 
-  if (tileInfo.room) {
+  if (tileInfo.variant !== "wall_block" && tileInfo.variant !== "void") {
     const tileImage = assets.border[tileInfo.variant] || assets.border.center;
 
     if (tileImage) {
@@ -1413,7 +1415,6 @@ function drawCell(x, y, cell) {
     if (tileInfo.baseWalkable && cell.entity !== EMPTY_ENTITY) {
       drawStaticEntity(screenX, screenY, cell.entity);
     }
-
   } else {
     ctx.fillStyle = "#17120f";
     ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
@@ -1591,8 +1592,8 @@ function getTileInfo(x, y) {
     };
   }
 
-  const variant = selectBorderVariant(x, y);
-  const baseWalkable = variant === "center";
+  const variant = glyph.fixedVariant || selectBorderVariant(x, y);
+  const baseWalkable = glyph.fixedVariant ? glyph.walkable !== false : variant === "center";
   const occupantToken = cell.entity;
   const occupantGlyph = ENTITY_GLYPHS[occupantToken];
   const occupied = occupantToken !== EMPTY_ENTITY && Boolean(occupantGlyph?.blocks);
@@ -1855,6 +1856,7 @@ function renderLegend() {
     "",
     "Legenda:",
     "  RM = piso com borda automatica",
+    "  CR = piso so para andar; nao serve para comer nem por objetos",
     "  CK = tile de comida; so faz comida ali",
     "  JR = tile de jarro; so faz decoracao ali",
     "  CH = bau infinito para guardar jarros e buscar recursos",
