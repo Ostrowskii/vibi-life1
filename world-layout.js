@@ -5,15 +5,15 @@ window.WORLD_LAYOUT = [
   },
   {
     entity: ["  ", "  ", "  ", "PL", "  ", "  "],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "CR", "CR", "CR", "CR", "RM"],
   },
   {
     entity: ["  ", "  ", "  ", "  ", "  ", "  "],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "RM", "CR", "RM", "RM", "RM"],
   },
   {
     entity: ["  ", "  ", "  ", "  ", "  ", "  "],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "RM", "CR", "RM", "RM", "RM"],
   },
   {
     entity: ["  ", "  ", "  ", "CH", "  ", "  "],
