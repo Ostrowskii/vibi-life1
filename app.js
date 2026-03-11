@@ -172,6 +172,9 @@ const dom = {
   aiSummary: document.getElementById("ai-summary"),
 };
 
+const baseWorld = parseRawMap(WORLD_MAP_RAW);
+const npcSpawn = extractEntitySpawn(baseWorld, "PL") || { x: 3, y: 1 };
+
 syncCanvasToWorld(baseWorld);
 const ctx = dom.canvas.getContext("2d");
 
@@ -185,9 +188,6 @@ const assets = {
   activityFloors: {},
   activityBalloons: {},
 };
-
-const baseWorld = parseRawMap(WORLD_MAP_RAW);
-const npcSpawn = extractEntitySpawn(baseWorld, "PL") || { x: 3, y: 1 };
 
 const state = {
   world: baseWorld,
