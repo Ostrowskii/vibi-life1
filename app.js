@@ -95,7 +95,11 @@ const NPC_SPRITES = {
 
 const WORLD_LAYOUT = [
   {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, "PL", EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, "PL", EMPTY_ENTITY, EMPTY_ENTITY],
     floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
   },
   {
@@ -108,11 +112,7 @@ const WORLD_LAYOUT = [
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["WL", "WL", "RM", "RM", "WL", "WL"],
+    floor: ["WL", "RM", "RM", "RM", "RM", "WL"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
