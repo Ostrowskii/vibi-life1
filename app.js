@@ -1549,7 +1549,7 @@ function drawActivityVisual(renderPosition) {
     return;
   }
 
-  ctx.drawImage(image, renderPosition.x + 8, renderPosition.y - 34, 32, 32);
+  ctx.drawImage(image, renderPosition.x + 16, renderPosition.y - 18, 16, 16);
 }
 
 function getVisibleBalloonKey() {
