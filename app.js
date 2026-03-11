@@ -149,44 +149,7 @@ const NPC_SPRITES = {
   ],
 };
 
-const WORLD_LAYOUT = [
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, "PL", EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, "CH", EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["WL", "RM", "CR", "RM", "RM", "WL"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "CR", "RM", "RM", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "CR", "CR", "CR", "JR", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "CK", "CK", "CR", "JR", "RM"],
-  },
-  {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
-  },
-];
+const WORLD_LAYOUT = window.WORLD_LAYOUT;
 
 const WORLD_MAP_RAW = buildWorldRaw(WORLD_LAYOUT);
 let copyMapFeedbackTimer = 0;
