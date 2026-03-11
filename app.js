@@ -1171,21 +1171,13 @@ function drawCell(x, y, cell) {
       drawStaticEntity(screenX, screenY, cell.entity);
     }
 
-    if (!tileInfo.baseWalkable) {
-      ctx.fillStyle = "rgba(16, 12, 9, 0.34)";
-      ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
-      ctx.fillStyle = "rgba(31, 22, 17, 0.8)";
-      ctx.fillRect(screenX, screenY, TILE_SIZE, 10);
-    }
   } else {
     ctx.fillStyle = "#17120f";
     ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
 
     if (hasAdjacentRoomFloor(x, y)) {
-      ctx.fillStyle = "#2b2218";
-      ctx.fillRect(screenX, screenY, TILE_SIZE, 10);
       ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
-      ctx.fillRect(screenX, screenY + 10, TILE_SIZE, TILE_SIZE - 10);
+      ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
   }
 
