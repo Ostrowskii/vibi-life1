@@ -41,11 +41,6 @@ pre {
   margin: 24px auto 40px;
 }
 
-.app-footer {
-  width: min(420px, 100%);
-  margin-top: 18px;
-}
-
 .card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -167,32 +162,22 @@ pre {
 }
 
 #game-canvas {
-  width: auto;
-  max-width: 100%;
-  max-height: calc(100vh - 140px);
+  width: 100%;
   height: auto;
   display: block;
-  margin: 0 auto;
+  margin: 0;
+  image-rendering: pixelated;
+}
+
+.world-viewport {
+  max-height: calc(100vh - 190px);
+  overflow: auto;
   border-radius: 20px;
   border: 1px solid rgba(140, 168, 109, 0.24);
   background:
     linear-gradient(180deg, rgba(15, 19, 17, 0.98), rgba(10, 13, 12, 0.98)),
     #0c0f0d;
-  image-rendering: pixelated;
-}
-
-.controls-card {
-  padding: 16px;
-  border-radius: 20px;
-  border: 1px solid rgba(239, 211, 163, 0.08);
-  background: var(--bg-panel-soft);
-}
-
-.controls-card-fixed {
-  min-height: 176px;
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 12px;
+  scrollbar-gutter: stable;
 }
 
 .help {
@@ -201,37 +186,8 @@ pre {
   line-height: 1.45;
 }
 
-.fixed-text-box {
-  margin: 0;
-  min-height: 84px;
-  max-height: 84px;
-  padding: 12px 14px;
-  border: 1px solid rgba(239, 211, 163, 0.1);
-  border-radius: 16px;
-  background: rgba(18, 15, 12, 0.72);
-  overflow: auto;
-  scrollbar-gutter: stable;
-}
-
 .compact-help {
   margin-bottom: 12px;
-}
-
-.ai-mode-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 12px 14px;
-  border: 1px solid rgba(239, 211, 163, 0.1);
-  border-radius: 16px;
-  background: rgba(18, 15, 12, 0.72);
-  color: var(--text-soft);
-}
-
-.ai-mode-row strong {
-  color: var(--text-main);
-  font-size: 1rem;
 }
 
 .sidebar {

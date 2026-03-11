@@ -30,7 +30,9 @@
             </div>
           </div>
 
-          <canvas id="game-canvas" width="288" height="432" aria-label="Mapa do jogo"></canvas>
+          <div class="world-viewport">
+            <canvas id="game-canvas" width="288" height="432" aria-label="Mapa do jogo"></canvas>
+          </div>
         </section>
 
         <section class="sidebar">
@@ -109,19 +111,6 @@
         </section>
       </main>
 
-      <section class="app-footer">
-        <div class="card controls-card controls-card-fixed">
-          <p class="panel-label">Comportamento do NPC</p>
-          <p class="help fixed-text-box" id="ai-summary">
-            O NPC escolhe sozinho passos adjacentes. Se todos os estados
-            estiverem confortaveis, entra em wandering.
-          </p>
-          <div class="ai-mode-row">
-            <span>Modo atual</span>
-            <strong id="ai-mode">wandering</strong>
-          </div>
-        </div>
-      </section>
     </div>
 
     <script src="world-layout.js"></script>

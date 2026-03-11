@@ -1549,7 +1549,15 @@ function drawActivityVisual(renderPosition) {
     return;
   }
 
-  ctx.drawImage(image, renderPosition.x + 16, renderPosition.y - 18, 16, 16);
+  const bubbleX = renderPosition.x + 10;
+  const bubbleY = renderPosition.y - 28;
+  const bubbleWidth = 28;
+  const bubbleHeight = 22;
+  const iconMaxWidth = 12;
+  const iconMaxHeight = 12;
+
+  drawThoughtBalloon(bubbleX, bubbleY, bubbleWidth, bubbleHeight);
+  drawContainedImage(image, bubbleX + 8, bubbleY + 4, iconMaxWidth, iconMaxHeight);
 }
 
 function getVisibleBalloonKey() {
@@ -1721,6 +1729,10 @@ function hasAdjacentRoomFloor(x, y) {
 }
 
 function renderBehavior() {
+  if (!dom.aiMode || !dom.aiSummary) {
+    return;
+  }
+
   const aiMeta = AI_MODE_META[state.aiMode];
   const taskMeta = taskPresentation();
   const motionLine = state.motion
@@ -1735,6 +1747,57 @@ function renderBehavior() {
 
   dom.aiMode.textContent = taskMeta?.title || aiMeta.title;
   dom.aiSummary.textContent = `${taskMeta?.summary || aiMeta.summary}${motionLine}${carryLine}`;
+}
+
+function drawThoughtBalloon(x, y, width, height) {
+  const radius = 8;
+
+  ctx.fillStyle = "rgba(6, 6, 6, 0.68)";
+  fillRoundedRect(x, y, width, height, radius);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(x + 14, y + height);
+  ctx.lineTo(x + 18, y + height);
+  ctx.lineTo(x + 15, y + height + 5);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.lineWidth = 1;
+  fillRoundedRect(x, y, width, height, radius);
+  ctx.stroke();
+}
+
+function fillRoundedRect(x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+  ctx.lineTo(x + width, y + height - radius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  ctx.lineTo(x + radius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
+function drawContainedImage(image, x, y, maxWidth, maxHeight) {
+  const sourceWidth = image.naturalWidth || image.width;
+  const sourceHeight = image.naturalHeight || image.height;
+
+  if (!sourceWidth || !sourceHeight) {
+    return;
+  }
+
+  const scale = Math.min(maxWidth / sourceWidth, maxHeight / sourceHeight, 1);
+  const drawWidth = Math.max(1, Math.round(sourceWidth * scale));
+  const drawHeight = Math.max(1, Math.round(sourceHeight * scale));
+  const offsetX = Math.floor((maxWidth - drawWidth) / 2);
+  const offsetY = Math.floor((maxHeight - drawHeight) / 2);
+
+  ctx.drawImage(image, x + offsetX, y + offsetY, drawWidth, drawHeight);
 }
 
 function renderStatus() {
