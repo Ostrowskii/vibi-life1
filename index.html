@@ -22,7 +22,6 @@
           <div class="panel-top">
             <div>
               <p class="panel-label">Mundo</p>
-              <h2>Mapa 6 x 9 com piso bordado e paredes automaticas</h2>
             </div>
             <div class="time-chip">
               <span>Ano atual</span>
@@ -32,18 +31,6 @@
           </div>
 
           <canvas id="game-canvas" width="288" height="432" aria-label="Mapa do jogo"></canvas>
-
-          <div class="controls-card">
-            <p class="panel-label">Comportamento do NPC</p>
-            <p class="help" id="ai-summary">
-              O NPC escolhe sozinho passos adjacentes. Se todos os estados
-              estiverem confortaveis, entra em wandering.
-            </p>
-            <div class="ai-mode-row">
-              <span>Modo atual</span>
-              <strong id="ai-mode">wandering</strong>
-            </div>
-          </div>
         </section>
 
         <section class="sidebar">
@@ -121,6 +108,20 @@
           </section>
         </section>
       </main>
+
+      <section class="app-footer">
+        <div class="card controls-card controls-card-fixed">
+          <p class="panel-label">Comportamento do NPC</p>
+          <p class="help fixed-text-box" id="ai-summary">
+            O NPC escolhe sozinho passos adjacentes. Se todos os estados
+            estiverem confortaveis, entra em wandering.
+          </p>
+          <div class="ai-mode-row">
+            <span>Modo atual</span>
+            <strong id="ai-mode">wandering</strong>
+          </div>
+        </div>
+      </section>
     </div>
 
     <script src="world-layout.js"></script>

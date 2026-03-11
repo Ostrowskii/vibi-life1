@@ -41,6 +41,11 @@ pre {
   margin: 24px auto 40px;
 }
 
+.app-footer {
+  width: min(420px, 100%);
+  margin-top: 18px;
+}
+
 .card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -173,17 +178,35 @@ pre {
 }
 
 .controls-card {
-  margin-top: 16px;
   padding: 16px;
   border-radius: 20px;
   border: 1px solid rgba(239, 211, 163, 0.08);
   background: var(--bg-panel-soft);
 }
 
+.controls-card-fixed {
+  min-height: 176px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 12px;
+}
+
 .help {
   margin: 0 0 14px;
   color: var(--text-soft);
   line-height: 1.45;
+}
+
+.fixed-text-box {
+  margin: 0;
+  min-height: 84px;
+  max-height: 84px;
+  padding: 12px 14px;
+  border: 1px solid rgba(239, 211, 163, 0.1);
+  border-radius: 16px;
+  background: rgba(18, 15, 12, 0.72);
+  overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .compact-help {
