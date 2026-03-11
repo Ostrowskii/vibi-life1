@@ -18,6 +18,8 @@ const FLOOR_GLYPHS = {
 const ENTITY_GLYPHS = {
   [EMPTY_ENTITY]: { label: "vazio" },
   PL: { label: "npc" },
+  CH: { label: "bau infinito", assetKey: "chest", blocks: true },
+  JA: { label: "jarro colocado", assetKey: "jar", blocks: true },
 };
 
 const AI_MODE_META = {
@@ -60,7 +62,7 @@ const ACTIVITY_DEFS = [
     floorAssetKey: "make_jar",
     balloonAssetKey: "make_jar",
     tileToken: "JR",
-    hint: "So pode acontecer sobre tiles JR.",
+    hint: "So pode acontecer sobre tiles JR. O jarro criado vai para um RM adjacente ou para o bau CH.",
   },
   {
     id: "fazer comida",
@@ -69,7 +71,7 @@ const ACTIVITY_DEFS = [
     floorAssetKey: "cook",
     balloonAssetKey: "cook",
     tileToken: "CK",
-    hint: "So pode acontecer sobre tiles CK.",
+    hint: "So pode acontecer sobre tiles CK. Recursos podem vir do bau CH infinito.",
   },
 ];
 
@@ -82,6 +84,11 @@ const ACTIVITY_ASSET_PATHS = {
     floor: "assets/atividades/make_jar_floor.png",
     balloon: "assets/atividades/make_jar_balloon.png",
   },
+};
+
+const ENTITY_ASSET_PATHS = {
+  CH: "assets/atividades/chest.png",
+  JA: "assets/atividades/jar.png",
 };
 
 const FAVORITE_OBJECTS = [
@@ -150,7 +157,7 @@ const WORLD_LAYOUT = [
     floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
   },
   {
-    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, "CH", EMPTY_ENTITY, EMPTY_ENTITY],
     floor: ["WL", "RM", "RM", "RM", "RM", "WL"],
   },
   {
@@ -198,6 +205,7 @@ const assets = {
     esquerda: [],
     direita: [],
   },
+  entities: {},
   activityFloors: {},
   activityBalloons: {},
 };
@@ -208,6 +216,9 @@ const npcSpawn = extractEntitySpawn(baseWorld, "PL") || { x: 3, y: 1 };
 const state = {
   world: baseWorld,
   character: createCharacter(npcSpawn),
+  storage: {
+    chestStoredJars: 0,
+  },
   log: [],
   elapsedMs: 0,
   runtimeMs: 0,
@@ -232,6 +243,7 @@ async function bootstrap() {
   await loadAssets();
   appendLog("Mapa inicial 6 x 9 carregado com camadas separadas de floor e entity.");
   appendLog("Tiles JR e CK definem os unicos pontos validos para fazer jarro e comida.");
+  appendLog("O bau CH guarda jarros infinitamente e tambem serve como fonte infinita de recursos.");
   appendLog("Movimento visual agora e animado tile por tile, sem glide unico.");
   renderUi();
   state.uiDirty = false;
@@ -266,6 +278,9 @@ function createCharacter(spawn) {
     preferencias: {
       objeto_favorito: sample(FAVORITE_OBJECTS),
       atividades_praticadas: [],
+    },
+    inventario: {
+      item_carregado: null,
     },
     conhecidos: [],
   };
@@ -451,6 +466,11 @@ function runNpcTurn() {
     return;
   }
 
+  if (state.character.inventario.item_carregado === "JA") {
+    runJarPlacementTurn();
+    return;
+  }
+
   syncAiMode();
   const activityId = activityForMode(state.aiMode);
 
@@ -474,6 +494,24 @@ function runNpcTurn() {
   }
 
   appendLog("O NPC ficou sem tiles adjacentes livres para caminhar.");
+}
+
+function runJarPlacementTurn() {
+  if (tryPlaceCarriedJarAdjacent()) {
+    return;
+  }
+
+  if (tryStoreCarriedJarInChest()) {
+    return;
+  }
+
+  const direction = chooseDirectionToAdjacentChest();
+  if (direction) {
+    beginNpcMove(direction);
+    return;
+  }
+
+  appendLog("O NPC esta com um jarro pronto, mas nao encontrou tile RM adjacente livre nem caminho ate o bau.");
 }
 
 function syncAiMode() {
@@ -584,6 +622,15 @@ function chooseAutonomousDirection(mode) {
   return pool[0].direction;
 }
 
+function chooseDirectionToAdjacentChest() {
+  const path = findPathToAdjacentEntityToken("CH", "resting");
+  if (path && path.length > 1) {
+    return directionBetween(path[0], path[1]);
+  }
+
+  return null;
+}
+
 function directionPriorityForMode(mode) {
   const priorityByMode = {
     feeding: ["down", "right", "left", "up"],
@@ -665,6 +712,41 @@ function findPathToFloorToken(tileToken, mode) {
       parents.set(key, current);
 
       if (state.world.cells[neighbor.y][neighbor.x].floor === tileToken) {
+        return buildPathFromParents(start, neighbor, parents);
+      }
+
+      queue.push(neighbor);
+    }
+  }
+
+  return null;
+}
+
+function findPathToAdjacentEntityToken(entityToken, mode) {
+  const start = state.character.fisico.pos;
+  if (isAdjacentToEntityToken(start.x, start.y, entityToken)) {
+    return [{ x: start.x, y: start.y }];
+  }
+
+  const priorities = directionPriorityForMode(mode);
+  const queue = [{ x: start.x, y: start.y }];
+  const parents = new Map();
+  const visited = new Set([cellKey(start.x, start.y)]);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const neighbors = neighborsByPriority(current.x, current.y, priorities);
+
+    for (const neighbor of neighbors) {
+      const key = cellKey(neighbor.x, neighbor.y);
+      if (visited.has(key) || !isNpcWalkable(neighbor.x, neighbor.y)) {
+        continue;
+      }
+
+      visited.add(key);
+      parents.set(key, current);
+
+      if (isAdjacentToEntityToken(neighbor.x, neighbor.y, entityToken)) {
         return buildPathFromParents(start, neighbor, parents);
       }
 
@@ -803,6 +885,73 @@ function isNpcWalkable(x, y) {
   return tileInfo.walkable;
 }
 
+function getAdjacentJarPlacementTarget() {
+  const { x, y } = state.character.fisico.pos;
+  const candidates = [
+    { x: x + 1, y },
+    { x: x - 1, y },
+    { x, y: y + 1 },
+    { x, y: y - 1 },
+  ];
+
+  return candidates.find((candidate) => {
+    if (!isInsideWorld(candidate.x, candidate.y)) {
+      return false;
+    }
+
+    const cell = state.world.cells[candidate.y][candidate.x];
+    const tileInfo = getTileInfo(candidate.x, candidate.y);
+    return tileInfo.baseWalkable && cell.floor === "RM" && cell.entity === EMPTY_ENTITY;
+  }) || null;
+}
+
+function tryPlaceCarriedJarAdjacent() {
+  if (state.character.inventario.item_carregado !== "JA") {
+    return false;
+  }
+
+  const target = getAdjacentJarPlacementTarget();
+  if (!target) {
+    return false;
+  }
+
+  state.world.cells[target.y][target.x].entity = "JA";
+  state.character.inventario.item_carregado = null;
+  state.uiDirty = true;
+  appendLog(`O NPC colocou um jarro em (${target.x}, ${target.y}). Esse tile agora bloqueia passagem.`);
+  return true;
+}
+
+function tryStoreCarriedJarInChest() {
+  if (state.character.inventario.item_carregado !== "JA") {
+    return false;
+  }
+
+  const { x, y } = state.character.fisico.pos;
+  if (!isAdjacentToEntityToken(x, y, "CH")) {
+    return false;
+  }
+
+  state.character.inventario.item_carregado = null;
+  state.storage.chestStoredJars += 1;
+  state.uiDirty = true;
+  appendLog(`O NPC guardou um jarro no bau. Total guardado: ${state.storage.chestStoredJars}.`);
+  return true;
+}
+
+function isAdjacentToEntityToken(x, y, token) {
+  const positions = [
+    { x, y: y - 1 },
+    { x: x + 1, y },
+    { x, y: y + 1 },
+    { x: x - 1, y },
+  ];
+
+  return positions.some((position) => {
+    return isInsideWorld(position.x, position.y) && state.world.cells[position.y][position.x].entity === token;
+  });
+}
+
 function performActivity(activityId, options = {}) {
   const activity = ACTIVITY_DEFS.find((item) => item.id === activityId);
   if (!activity) {
@@ -848,6 +997,10 @@ function performActivity(activityId, options = {}) {
   state.lastActivityId = activity.id;
   startActivityVisual(activity);
 
+  if (activity.id === "fazer decoracao" && succeeded) {
+    createJarFromDecoration();
+  }
+
   const prefix = options.source === "ai" ? "A IA escolheu: " : "";
   const statusLabel = succeeded ? "deu certo" : "falhou";
   const summary = succeeded ? activity.successLabel : `${activity.label.toLowerCase()} e falhou`;
@@ -855,6 +1008,22 @@ function performActivity(activityId, options = {}) {
     `${prefix}${summary}. Resultado ${statusLabel} (${roll}/10), gostar ${record.taxa_gostar}, qualidade ${record.taxa_qualidade}.`
   );
   return true;
+}
+
+function createJarFromDecoration() {
+  state.character.inventario.item_carregado = "JA";
+  state.uiDirty = true;
+  appendLog("Um novo jarro foi criado.");
+
+  if (tryPlaceCarriedJarAdjacent()) {
+    return;
+  }
+
+  if (tryStoreCarriedJarInChest()) {
+    return;
+  }
+
+  appendLog("Nao havia tile RM adjacente livre. O NPC vai procurar o bau para guardar o jarro.");
 }
 
 function startActivityVisual(activity) {
@@ -998,7 +1167,11 @@ function drawCell(x, y, cell) {
       drawActivityFloorMarker(screenX, screenY, tileInfo.token);
     }
 
-    if (!tileInfo.walkable) {
+    if (tileInfo.baseWalkable && cell.entity !== EMPTY_ENTITY) {
+      drawStaticEntity(screenX, screenY, cell.entity);
+    }
+
+    if (!tileInfo.baseWalkable) {
       ctx.fillStyle = "rgba(16, 12, 9, 0.34)";
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
       ctx.fillStyle = "rgba(31, 22, 17, 0.8)";
@@ -1018,6 +1191,32 @@ function drawCell(x, y, cell) {
 
   ctx.strokeStyle = "rgba(242, 231, 207, 0.05)";
   ctx.strokeRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+}
+
+function drawStaticEntity(screenX, screenY, token) {
+  const image = assets.entities[token];
+  const drawMap = {
+    CH: { x: 10, y: 10, size: 28 },
+    JA: { x: 12, y: 8, size: 24 },
+  };
+  const drawInfo = drawMap[token];
+
+  if (!drawInfo) {
+    return;
+  }
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.24)";
+  ctx.beginPath();
+  ctx.ellipse(screenX + 24, screenY + 35, 11, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (image) {
+    ctx.drawImage(image, screenX + drawInfo.x, screenY + drawInfo.y, drawInfo.size, drawInfo.size);
+    return;
+  }
+
+  ctx.fillStyle = token === "CH" ? "#7f5c41" : "#c87a4a";
+  ctx.fillRect(screenX + drawInfo.x, screenY + drawInfo.y, drawInfo.size, drawInfo.size);
 }
 
 function drawActivityFloorMarker(screenX, screenY, token) {
@@ -1145,16 +1344,23 @@ function getTileInfo(x, y) {
   }
 
   const variant = selectBorderVariant(x, y);
-  const walkable = variant === "center";
+  const baseWalkable = variant === "center";
+  const occupantToken = cell.entity;
+  const occupantGlyph = ENTITY_GLYPHS[occupantToken];
+  const occupied = occupantToken !== EMPTY_ENTITY && Boolean(occupantGlyph?.blocks);
+  const walkable = baseWalkable && !occupied;
+  const label = occupied ? occupantGlyph.label : baseWalkable ? glyph.label : `parede bordada (${variant})`;
 
   return {
-    label: walkable ? glyph.label : `parede bordada (${variant})`,
+    label,
     walkable,
     collidable: !walkable,
     variant,
+    baseWalkable,
     room: Boolean(glyph.room),
     floorAssetKey: glyph.floorAssetKey || null,
     token: cell.floor,
+    occupantToken,
   };
 }
 
@@ -1237,9 +1443,13 @@ function renderBehavior() {
   const motionLine = state.motion
     ? ` Passo atual: (${state.motion.from.x}, ${state.motion.from.y}) -> (${state.motion.to.x}, ${state.motion.to.y}).`
     : "";
+  const carryLine =
+    state.character.inventario.item_carregado === "JA"
+      ? " O NPC esta carregando um jarro e vai coloca-lo num tile RM livre ou no bau."
+      : "";
 
   dom.aiMode.textContent = aiMeta.title;
-  dom.aiSummary.textContent = `${aiMeta.summary}${motionLine}`;
+  dom.aiSummary.textContent = `${aiMeta.summary}${motionLine}${carryLine}`;
 }
 
 function renderStatus() {
@@ -1297,6 +1507,14 @@ function renderMeta() {
       value: currentTile.label,
     },
     {
+      label: "Item carregado",
+      value: state.character.inventario.item_carregado || "nenhum",
+    },
+    {
+      label: "Jarros no bau",
+      value: `${state.storage.chestStoredJars}`,
+    },
+    {
       label: "Atividades ja praticadas",
       value: `${activitiesCount}`,
     },
@@ -1349,21 +1567,25 @@ function renderActivities() {
 
   if (activityRecords.length === 0) {
     dom.activityView.textContent =
-      "A IA ainda nao escolheu nenhuma atividade.\n\nA viewport usa animacao de caminhada por tile.\nComida so acontece em CK e jarro so acontece em JR.";
+      "A IA ainda nao escolheu nenhuma atividade.\n\nA viewport usa animacao de caminhada por tile.\nComida so acontece em CK, jarro so acontece em JR e o bau CH guarda infinitamente.";
     return;
   }
 
-  dom.activityView.textContent = activityRecords
-    .map((record) => {
-      const label = ACTIVITY_DEFS.find((item) => item.id === record.atividade)?.label || record.atividade;
-      return [
-        `${label}`,
-        `  gostar: ${record.taxa_gostar}`,
-        `  sucesso: ${record.taxa_sucesso}`,
-        `  qualidade: ${record.taxa_qualidade}`,
-        `  repeticoes: ${record.repeticoes}`,
-      ].join("\n");
-    })
+  const chestLine = `Bau CH\n  jarros guardados: ${state.storage.chestStoredJars}\n  recursos: infinitos`;
+
+  dom.activityView.textContent = [chestLine]
+    .concat(
+      activityRecords.map((record) => {
+        const label = ACTIVITY_DEFS.find((item) => item.id === record.atividade)?.label || record.atividade;
+        return [
+          `${label}`,
+          `  gostar: ${record.taxa_gostar}`,
+          `  sucesso: ${record.taxa_sucesso}`,
+          `  qualidade: ${record.taxa_qualidade}`,
+          `  repeticoes: ${record.repeticoes}`,
+        ].join("\n");
+      })
+    )
     .join("\n\n");
 }
 
@@ -1384,6 +1606,8 @@ function renderLegend() {
     "  RM = piso com borda automatica",
     "  CK = tile de comida; so faz comida ali",
     "  JR = tile de jarro; so faz decoracao ali",
+    "  CH = bau infinito para guardar jarros e buscar recursos",
+    "  JA = jarro colocado sobre um tile RM; bloqueia passagem",
     "  WL = parede direta do mapa",
     "  Apenas a variante center e caminhavel",
     "  O RAW segue por tile; a viewport interpola cada passo visual",
@@ -1399,7 +1623,11 @@ function characterSnapshot() {
     status: state.character.status,
     fisico: state.character.fisico,
     preferencias: state.character.preferencias,
+    inventario: state.character.inventario,
     conhecidos: state.character.conhecidos,
+    mundo: {
+      jarros_no_bau: state.storage.chestStoredJars,
+    },
     movimento_visual: state.motion
       ? {
           from: state.motion.from,
@@ -1458,7 +1686,7 @@ function clamp(value, min, max) {
 }
 
 async function loadAssets() {
-  const [borderEntries, leftFrames, rightFrames, activityEntries] = await Promise.all([
+  const [borderEntries, leftFrames, rightFrames, activityEntries, entityEntries] = await Promise.all([
     Promise.all(
       Object.entries(BORDER_TILE_PATHS).map(async ([key, src]) => {
         return [key, await loadImage(src)];
@@ -1477,6 +1705,11 @@ async function loadAssets() {
         ];
       })
     ),
+    Promise.all(
+      Object.entries(ENTITY_ASSET_PATHS).map(async ([key, src]) => {
+        return [key, await loadImage(src)];
+      })
+    ),
   ]);
 
   borderEntries.forEach(([key, image]) => {
@@ -1486,6 +1719,10 @@ async function loadAssets() {
   activityEntries.forEach(([key, images]) => {
     assets.activityFloors[key] = images.floor;
     assets.activityBalloons[key] = images.balloon;
+  });
+
+  entityEntries.forEach(([key, image]) => {
+    assets.entities[key] = image;
   });
 
   assets.npc.esquerda = leftFrames.filter(Boolean);
