@@ -1,12 +1,14 @@
 const TILE_SIZE = 48;
 const REAL_MS_PER_YEAR = 5 * 60 * 1000;
 const NPC_STEP_MS = 520;
+const AI_DECISION_MS = NPC_STEP_MS * 2;
 const WALK_DURATION_MS = 280;
 const NEED_DECAY_MS = 12000;
 const ACTIVITY_COOLDOWN_MS = 4200;
 const ACTIVITY_VISUAL_MS = 1400;
 const EAT_DURATION_MS = 2600;
 const COMFORT_THRESHOLD = 70;
+const WANDER_SEARCH_STEPS = 3;
 const EMPTY_ENTITY = "  ";
 
 const FLOOR_GLYPHS = {
@@ -202,7 +204,7 @@ const state = {
   lastVisibleSecond: -1,
   needClockMs: 0,
   activityCooldownMs: 0,
-  aiClockMs: 0,
+  aiPauseMs: AI_DECISION_MS,
   needCycles: 0,
   moveCount: 0,
   lastDirection: null,
@@ -210,6 +212,7 @@ const state = {
   lastActivityId: null,
   task: null,
   motion: null,
+  route: null,
   activityVisual: null,
   uiDirty: true,
 };
@@ -421,7 +424,6 @@ function loop(timestamp) {
   state.runtimeMs += delta;
   state.elapsedMs += delta;
   state.needClockMs += delta;
-  state.aiClockMs += delta;
   state.activityCooldownMs = Math.max(0, state.activityCooldownMs - delta);
 
   updateNpcMotion(delta);
@@ -439,10 +441,15 @@ function loop(timestamp) {
     applyNaturalNeedDecay();
   }
 
-  if (!state.motion) {
-    while (state.aiClockMs >= NPC_STEP_MS) {
-      state.aiClockMs -= NPC_STEP_MS;
-      runNpcTurn();
+  if (!state.motion && !continueNpcRoute()) {
+    state.aiPauseMs = Math.max(0, state.aiPauseMs - delta);
+
+    if (state.aiPauseMs === 0) {
+      const pauseKind = runNpcTurn();
+
+      if (!state.motion && !state.route) {
+        scheduleAiPause(pauseKind);
+      }
     }
   }
 
@@ -489,6 +496,12 @@ function finalizeNpcMove() {
   appendLog(
     `Passo concluido para (${state.character.fisico.pos.x}, ${state.character.fisico.pos.y}) em ${tileInfo.label}.`
   );
+
+  if (continueNpcRoute()) {
+    return;
+  }
+
+  scheduleAiPause(getCurrentPauseKind());
 }
 
 function updateActivityVisual(delta) {
@@ -515,34 +528,34 @@ function updateTask(delta) {
 
 function runNpcTurn() {
   if (state.motion) {
-    return;
+    return "default";
   }
 
   if (state.character.inventario.item_carregado === "JA") {
     runJarPlacementTurn();
-    return;
+    return "jar";
   }
 
   if (state.task) {
     runTaskTurn();
-    return;
+    return "default";
   }
 
   syncAiMode();
 
   if (state.aiMode === "resting") {
     restTurn();
-    return;
+    return "default";
   }
 
   if (state.aiMode === "feeding") {
     startEatingTask();
-    return;
+    return "default";
   }
 
   if (shouldStartCookingTask()) {
     startCookingTask();
-    return;
+    return "default";
   }
 
   const activityId = activityForMode(state.aiMode);
@@ -552,16 +565,23 @@ function runNpcTurn() {
       state.activityCooldownMs = ACTIVITY_COOLDOWN_MS;
     }
 
-    return;
+    return "default";
   }
 
-  const direction = chooseAutonomousDirection(state.aiMode);
+  const path = chooseAutonomousPath(state.aiMode);
+  if (path && path.length > 1) {
+    beginNpcPath(path, state.aiMode === "wandering" ? "wandering" : "default");
+    return "default";
+  }
+
+  const direction = chooseFallbackDirection(state.aiMode);
   if (direction) {
     beginNpcMove(direction);
-    return;
+    return "default";
   }
 
   appendLog("O NPC ficou sem tiles adjacentes livres para caminhar.");
+  return "default";
 }
 
 function shouldStartCookingTask() {
@@ -569,6 +589,7 @@ function shouldStartCookingTask() {
 }
 
 function startEatingTask() {
+  clearNpcRoute();
   state.task = {
     type: "eat",
     stage: "to_chest",
@@ -580,6 +601,7 @@ function startEatingTask() {
 }
 
 function startCookingTask() {
+  clearNpcRoute();
   state.task = {
     type: "cook",
     stage: "to_chest",
@@ -590,6 +612,7 @@ function startCookingTask() {
 }
 
 function clearTask() {
+  clearNpcRoute();
   state.task = null;
   state.uiDirty = true;
 }
@@ -627,9 +650,9 @@ function runEatTaskTurn() {
       return;
     }
 
-    const direction = chooseDirectionToAdjacentChest();
-    if (direction) {
-      beginNpcMove(direction);
+    const path = findPathToAdjacentEntityToken("CH", "resting");
+    if (path && path.length > 1) {
+      beginNpcPath(path, "default");
       return;
     }
 
@@ -646,9 +669,9 @@ function runEatTaskTurn() {
       return;
     }
 
-    const direction = chooseDirectionToEatingTile();
-    if (direction) {
-      beginNpcMove(direction);
+    const path = findPathToMatchingTile((nextX, nextY) => isValidEatingTile(nextX, nextY), "wandering");
+    if (path && path.length > 1) {
+      beginNpcPath(path, "default");
       return;
     }
 
@@ -672,9 +695,9 @@ function runCookTaskTurn() {
       return;
     }
 
-    const direction = chooseDirectionToAdjacentChest();
-    if (direction) {
-      beginNpcMove(direction);
+    const path = findPathToAdjacentEntityToken("CH", "resting");
+    if (path && path.length > 1) {
+      beginNpcPath(path, "default");
       return;
     }
 
@@ -692,9 +715,9 @@ function runCookTaskTurn() {
       return;
     }
 
-    const direction = chooseDirectionToActivityTile("fazer comida", "feeding");
-    if (direction) {
-      beginNpcMove(direction);
+    const path = findPathToFloorToken(getRequiredTileToken("fazer comida"), "feeding");
+    if (path && path.length > 1) {
+      beginNpcPath(path, "default");
       return;
     }
 
@@ -807,7 +830,21 @@ function applyNaturalNeedDecay() {
   applyLowStatusConsequences();
 }
 
-function chooseAutonomousDirection(mode) {
+function chooseAutonomousPath(mode) {
+  if (mode === "wandering") {
+    return chooseWanderingPath();
+  }
+
+  const activityId = activityForMode(mode);
+  const targetToken = getRequiredTileToken(activityId);
+  if (targetToken) {
+    return findPathToFloorToken(targetToken, mode);
+  }
+
+  return null;
+}
+
+function chooseFallbackDirection(mode) {
   const options = getAdjacentOptions();
   if (options.length === 0) {
     return null;
@@ -816,15 +853,6 @@ function chooseAutonomousDirection(mode) {
   if (mode === "wandering") {
     const filtered = filterImmediateBacktrack(options);
     return sample(filtered.length > 0 ? filtered : options).direction;
-  }
-
-  const activityId = activityForMode(mode);
-  const targetToken = getRequiredTileToken(activityId);
-  if (targetToken) {
-    const path = findPathToFloorToken(targetToken, mode);
-    if (path && path.length > 1) {
-      return directionBetween(path[0], path[1]);
-    }
   }
 
   const filtered = filterImmediateBacktrack(options);
@@ -839,6 +867,56 @@ function chooseAutonomousDirection(mode) {
   }
 
   return pool[0].direction;
+}
+
+function chooseWanderingPath() {
+  const paths = collectReachablePathsWithinSteps(WANDER_SEARCH_STEPS, "wandering");
+  if (paths.length === 0) {
+    return null;
+  }
+
+  const reverse = reverseDirection(state.lastDirection);
+  const filtered = reverse
+    ? paths.filter((path) => directionBetween(path[0], path[1]) !== reverse)
+    : paths;
+  const pool = filtered.length > 0 ? filtered : paths;
+  const farthestStepCount = Math.max(...pool.map((path) => path.length - 1));
+  const farthestPaths = pool.filter((path) => path.length - 1 === farthestStepCount);
+
+  return sample(farthestPaths);
+}
+
+function collectReachablePathsWithinSteps(maxSteps, mode) {
+  const start = state.character.fisico.pos;
+  const priorities = directionPriorityForMode(mode);
+  const queue = [{ x: start.x, y: start.y, depth: 0 }];
+  const parents = new Map();
+  const depths = new Map([[cellKey(start.x, start.y), 0]]);
+  const paths = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current.depth >= maxSteps) {
+      continue;
+    }
+
+    const neighbors = neighborsByPriority(current.x, current.y, priorities);
+
+    for (const neighbor of neighbors) {
+      const key = cellKey(neighbor.x, neighbor.y);
+      if (depths.has(key) || !isNpcWalkable(neighbor.x, neighbor.y)) {
+        continue;
+      }
+
+      const depth = current.depth + 1;
+      depths.set(key, depth);
+      parents.set(key, current);
+      queue.push({ x: neighbor.x, y: neighbor.y, depth });
+      paths.push(buildPathFromParents(start, neighbor, parents));
+    }
+  }
+
+  return paths;
 }
 
 function chooseDirectionToAdjacentChest() {
@@ -1030,6 +1108,53 @@ function directionBetween(from, to) {
 
 function cellKey(x, y) {
   return `${x},${y}`;
+}
+
+function beginNpcPath(path, kind = "default") {
+  if (!path || path.length < 2) {
+    return false;
+  }
+
+  state.route = {
+    kind,
+    steps: path.slice(1),
+  };
+
+  return continueNpcRoute();
+}
+
+function continueNpcRoute() {
+  if (!state.route || state.motion) {
+    return false;
+  }
+
+  const next = state.route.steps[0];
+  if (!next) {
+    state.route = null;
+    return false;
+  }
+
+  const direction = directionBetween(state.character.fisico.pos, next);
+  if (!direction || !isNpcWalkable(next.x, next.y)) {
+    clearNpcRoute();
+    return false;
+  }
+
+  state.route.steps.shift();
+  beginNpcMove(direction);
+  return true;
+}
+
+function clearNpcRoute() {
+  state.route = null;
+}
+
+function getCurrentPauseKind() {
+  return state.character.inventario.item_carregado === "JA" ? "jar" : "default";
+}
+
+function scheduleAiPause(kind = "default") {
+  state.aiPauseMs = kind === "jar" ? NPC_STEP_MS : AI_DECISION_MS;
 }
 
 function beginNpcMove(direction) {
