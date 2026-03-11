@@ -160,7 +160,7 @@ const WORLD_LAYOUT = [
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "JR", "RM", "RM"],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
@@ -176,15 +176,15 @@ const WORLD_LAYOUT = [
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "CR", "CR", "CR", "JR"],
+    floor: ["RM", "CR", "CR", "CR", "JR", "RM"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "CR", "CR", "CR", "CR", "JR"],
+    floor: ["RM", "CK", "CK", "CR", "JR", "RM"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "CK", "CK", "RM", "RM", "RM"],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
   },
 ];
 
