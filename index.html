@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vibi Life</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero card">
+        <p class="eyebrow">Primeiro prototipo de Vibi Life</p>
+        <h1>Vibi Life</h1>
+        <p class="lead">
+          Mapa RAW, visualizacao em terminal e um personagem unico com idade,
+          status, preferencias e atividades.
+        </p>
+      </header>
+
+      <main class="layout">
+        <section class="card world-card">
+          <div class="panel-top">
+            <div>
+              <p class="panel-label">Mundo</p>
+              <h2>Mapa 6 x 9 com duas salas e corredor central</h2>
+            </div>
+            <div class="time-chip">
+              <span>Ano atual</span>
+              <strong id="age-display">18</strong>
+              <small id="year-timer">proximo ano em 05:00</small>
+            </div>
+          </div>
+
+          <canvas id="game-canvas" width="288" height="432" aria-label="Mapa do jogo"></canvas>
+
+          <div class="controls-card">
+            <p class="panel-label">Controles</p>
+            <p class="help">
+              Setas ou WASD movem em tiles inteiros. Nao existe diagonal.
+            </p>
+
+            <div class="dpad" aria-label="Controles de movimento">
+              <button type="button" class="move-btn up" data-move="up">Cima</button>
+              <button type="button" class="move-btn left" data-move="left">Esq</button>
+              <button type="button" class="move-btn down" data-move="down">Baixo</button>
+              <button type="button" class="move-btn right" data-move="right">Dir</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="sidebar">
+          <section class="card">
+            <div class="panel-top compact">
+              <div>
+                <p class="panel-label">Personagem</p>
+                <h2>Estado atual</h2>
+              </div>
+              <div class="favorite-chip">
+                <span>Objeto favorito</span>
+                <strong id="favorite-object">-</strong>
+              </div>
+            </div>
+
+            <div id="status-grid" class="status-grid"></div>
+
+            <div class="meta-grid" id="meta-grid"></div>
+          </section>
+
+          <section class="card">
+            <div class="panel-top compact">
+              <div>
+                <p class="panel-label">Atividades</p>
+                <h2>Acoes iniciais</h2>
+              </div>
+              <span class="pill">sucesso base 8/10</span>
+            </div>
+
+            <div class="activity-grid">
+              <button type="button" class="activity-btn" data-activity="organizar">
+                Organizar
+              </button>
+              <button type="button" class="activity-btn" data-activity="fazer decoracao">
+                Fazer decoracao
+              </button>
+              <button type="button" class="activity-btn" data-activity="fazer comida">
+                Fazer comida
+              </button>
+            </div>
+
+            <pre id="activity-view" class="mono-box"></pre>
+          </section>
+
+          <section class="card">
+            <div class="panel-top compact">
+              <div>
+                <p class="panel-label">Terminal</p>
+                <h2>Mapa RAW em tempo real</h2>
+              </div>
+              <span class="pill">4 chars por camada</span>
+            </div>
+
+            <textarea id="terminal-view" class="terminal-view" readonly spellcheck="false"></textarea>
+            <pre id="legend-view" class="mono-box small"></pre>
+          </section>
+
+          <section class="card">
+            <div class="panel-top compact">
+              <div>
+                <p class="panel-label">Estrutura</p>
+                <h2>Snapshot do personagem</h2>
+              </div>
+            </div>
+
+            <pre id="state-view" class="mono-box"></pre>
+          </section>
+
+          <section class="card">
+            <div class="panel-top compact">
+              <div>
+                <p class="panel-label">Log</p>
+                <h2>Ultimos eventos</h2>
+              </div>
+            </div>
+
+            <ul id="log-list" class="log-list"></ul>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
