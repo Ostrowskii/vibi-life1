@@ -1474,7 +1474,58 @@ function drawNpc() {
     ctx.fillRect(renderPosition.x + 10, renderPosition.y + 6, 24, 28);
   }
 
+  drawCarriedItem(renderPosition);
   drawActivityVisual(renderPosition);
+}
+
+function drawCarriedItem(renderPosition) {
+  const itemKey = state.character.inventario.item_carregado;
+  if (!itemKey || itemKey === "ING") {
+    return;
+  }
+
+  const direction = state.character.fisico.direcao_olhar;
+  const drawX = direction === "esquerda" ? renderPosition.x + 4 : renderPosition.x + 21;
+  const drawY = renderPosition.y + 17;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+  ctx.beginPath();
+  ctx.ellipse(drawX + 8, drawY + 14, 7, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (itemKey === "JA") {
+    drawHeldJar(drawX, drawY);
+    return;
+  }
+
+  if (itemKey === "FOOD") {
+    drawHeldFood(drawX, drawY);
+  }
+}
+
+function drawHeldJar(drawX, drawY) {
+  const image = assets.entities.JA;
+  if (image) {
+    ctx.drawImage(image, drawX, drawY - 2, 18, 18);
+    return;
+  }
+
+  ctx.fillStyle = "#c87a4a";
+  ctx.fillRect(drawX + 2, drawY + 1, 14, 14);
+}
+
+function drawHeldFood(drawX, drawY) {
+  ctx.fillStyle = "#d8cab2";
+  ctx.fillRect(drawX + 1, drawY + 8, 14, 4);
+  ctx.fillStyle = "#79624d";
+  ctx.fillRect(drawX + 2, drawY + 9, 12, 2);
+  ctx.fillStyle = "#85b35c";
+  ctx.fillRect(drawX + 3, drawY + 3, 10, 6);
+  ctx.fillStyle = "#d14a37";
+  ctx.fillRect(drawX + 5, drawY + 4, 2, 2);
+  ctx.fillRect(drawX + 9, drawY + 5, 2, 2);
+  ctx.strokeStyle = "rgba(255, 244, 220, 0.65)";
+  ctx.strokeRect(drawX + 2.5, drawY + 2.5, 11, 9);
 }
 
 function drawActivityVisual(renderPosition) {
