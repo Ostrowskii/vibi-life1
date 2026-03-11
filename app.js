@@ -9,7 +9,9 @@ const COMFORT_THRESHOLD = 70;
 const EMPTY_ENTITY = "  ";
 
 const FLOOR_GLYPHS = {
-  RM: { label: "piso bordado" },
+  RM: { label: "piso bordado", room: true, floorAssetKey: null },
+  CK: { label: "piso de comida", room: true, floorAssetKey: "cook" },
+  JR: { label: "piso de jarro", room: true, floorAssetKey: "make_jar" },
   WL: { label: "parede direta" },
 };
 
@@ -27,12 +29,12 @@ const AI_MODE_META = {
   feeding: {
     title: "buscar comida",
     summary:
-      "A saciedade caiu. O NPC avanca tile por tile ate estabilizar e tenta cozinhar quando chega na zona inferior.",
+      "A saciedade caiu. O NPC anda tile por tile ate um dos dois tiles CK e so cozinha ali.",
   },
   decorating: {
     title: "buscar decoracao",
     summary:
-      "A felicidade caiu. O NPC sobe tile por tile e tenta decorar quando encontra uma zona melhor no mapa.",
+      "A felicidade caiu. O NPC anda tile por tile ate um dos dois tiles JR e so faz jarro ali.",
   },
   resting: {
     title: "descansando",
@@ -46,28 +48,40 @@ const ACTIVITY_DEFS = [
     id: "organizar",
     label: "Organizar",
     successLabel: "organizou o espaco",
-    assetKey: null,
+    floorAssetKey: null,
+    balloonAssetKey: null,
+    tileToken: null,
     hint: "Mantem o ambiente em ordem.",
   },
   {
     id: "fazer decoracao",
     label: "Fazer decoracao",
     successLabel: "decorou a sala",
-    assetKey: "make_jar",
-    hint: "Usa o asset make_jar.png.",
+    floorAssetKey: "make_jar",
+    balloonAssetKey: "make_jar",
+    tileToken: "JR",
+    hint: "So pode acontecer sobre tiles JR.",
   },
   {
     id: "fazer comida",
     label: "Fazer comida",
     successLabel: "preparou comida",
-    assetKey: "cook",
-    hint: "Usa o asset cook.png.",
+    floorAssetKey: "cook",
+    balloonAssetKey: "cook",
+    tileToken: "CK",
+    hint: "So pode acontecer sobre tiles CK.",
   },
 ];
 
-const ACTIVITY_ICON_PATHS = {
-  cook: "assets/atividades/cook.png",
-  make_jar: "assets/atividades/make_jar.png",
+const ACTIVITY_ASSET_PATHS = {
+  cook: {
+    floor: "assets/atividades/cook_floor.png",
+    balloon: "assets/atividades/cook_balloon.png",
+  },
+  make_jar: {
+    floor: "assets/atividades/make_jar_floor.png",
+    balloon: "assets/atividades/make_jar_balloon.png",
+  },
 };
 
 const FAVORITE_OBJECTS = [
@@ -129,7 +143,7 @@ const WORLD_LAYOUT = [
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "RM", "JR", "JR", "RM", "RM"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
@@ -145,7 +159,7 @@ const WORLD_LAYOUT = [
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "RM", "CK", "CK", "RM", "RM"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
@@ -184,7 +198,8 @@ const assets = {
     esquerda: [],
     direita: [],
   },
-  activityIcons: {},
+  activityFloors: {},
+  activityBalloons: {},
 };
 
 const baseWorld = parseRawMap(WORLD_MAP_RAW);
@@ -216,6 +231,7 @@ bootstrap();
 async function bootstrap() {
   await loadAssets();
   appendLog("Mapa inicial 6 x 9 carregado com camadas separadas de floor e entity.");
+  appendLog("Tiles JR e CK definem os unicos pontos validos para fazer jarro e comida.");
   appendLog("Movimento visual agora e animado tile por tile, sem glide unico.");
   renderUi();
   state.uiDirty = false;
@@ -436,28 +452,24 @@ function runNpcTurn() {
   }
 
   syncAiMode();
+  const activityId = activityForMode(state.aiMode);
 
   if (state.aiMode === "resting") {
     restTurn();
     return;
   }
 
-  const activityId = activityForMode(state.aiMode);
-  if (activityId && state.activityCooldownMs === 0 && isInNeedZone(state.aiMode)) {
-    performActivity(activityId, { source: "ai" });
-    state.activityCooldownMs = ACTIVITY_COOLDOWN_MS;
+  if (activityId && isActivityAllowedAtCurrentTile(activityId)) {
+    if (state.activityCooldownMs === 0 && performActivity(activityId, { source: "ai" })) {
+      state.activityCooldownMs = ACTIVITY_COOLDOWN_MS;
+    }
+
     return;
   }
 
   const direction = chooseAutonomousDirection(state.aiMode);
   if (direction) {
     beginNpcMove(direction);
-    return;
-  }
-
-  if (activityId && state.activityCooldownMs === 0) {
-    performActivity(activityId, { source: "ai" });
-    state.activityCooldownMs = ACTIVITY_COOLDOWN_MS;
     return;
   }
 
@@ -514,21 +526,6 @@ function activityForMode(mode) {
   return null;
 }
 
-function isInNeedZone(mode) {
-  const currentY = state.character.fisico.pos.y;
-  const options = getAdjacentOptions();
-
-  if (mode === "feeding") {
-    return currentY >= state.world.height - 3 || !options.some((option) => option.target.y > currentY);
-  }
-
-  if (mode === "decorating") {
-    return currentY <= 2 || !options.some((option) => option.target.y < currentY);
-  }
-
-  return true;
-}
-
 function restTurn() {
   adjustStatus("energia", 4);
 
@@ -564,15 +561,18 @@ function chooseAutonomousDirection(mode) {
     return sample(filtered.length > 0 ? filtered : options).direction;
   }
 
-  const priorityByMode = {
-    feeding: ["down", "right", "left", "up"],
-    decorating: ["up", "left", "right", "down"],
-    resting: ["up", "down", "left", "right"],
-  };
+  const activityId = activityForMode(mode);
+  const targetToken = getRequiredTileToken(activityId);
+  if (targetToken) {
+    const path = findPathToFloorToken(targetToken, mode);
+    if (path && path.length > 1) {
+      return directionBetween(path[0], path[1]);
+    }
+  }
 
-  const priorities = priorityByMode[mode] || priorityByMode.wandering;
   const filtered = filterImmediateBacktrack(options);
   const pool = filtered.length > 0 ? filtered : options;
+  const priorities = directionPriorityForMode(mode);
 
   for (const direction of priorities) {
     const match = pool.find((option) => option.direction === direction);
@@ -582,6 +582,17 @@ function chooseAutonomousDirection(mode) {
   }
 
   return pool[0].direction;
+}
+
+function directionPriorityForMode(mode) {
+  const priorityByMode = {
+    feeding: ["down", "right", "left", "up"],
+    decorating: ["up", "left", "right", "down"],
+    resting: ["up", "down", "left", "right"],
+    wandering: ["down", "right", "left", "up"],
+  };
+
+  return priorityByMode[mode] || priorityByMode.wandering;
 }
 
 function filterImmediateBacktrack(options) {
@@ -623,6 +634,101 @@ function getAdjacentOptions() {
       };
     })
     .filter((option) => isNpcWalkable(option.target.x, option.target.y));
+}
+
+function findPathToFloorToken(tileToken, mode) {
+  if (!tileToken) {
+    return null;
+  }
+
+  const start = state.character.fisico.pos;
+  if (state.world.cells[start.y][start.x].floor === tileToken) {
+    return [{ x: start.x, y: start.y }];
+  }
+
+  const priorities = directionPriorityForMode(mode);
+  const queue = [{ x: start.x, y: start.y }];
+  const parents = new Map();
+  const visited = new Set([cellKey(start.x, start.y)]);
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const neighbors = neighborsByPriority(current.x, current.y, priorities);
+
+    for (const neighbor of neighbors) {
+      const key = cellKey(neighbor.x, neighbor.y);
+      if (visited.has(key) || !isNpcWalkable(neighbor.x, neighbor.y)) {
+        continue;
+      }
+
+      visited.add(key);
+      parents.set(key, current);
+
+      if (state.world.cells[neighbor.y][neighbor.x].floor === tileToken) {
+        return buildPathFromParents(start, neighbor, parents);
+      }
+
+      queue.push(neighbor);
+    }
+  }
+
+  return null;
+}
+
+function neighborsByPriority(x, y, priorities) {
+  const deltaByDirection = {
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 },
+  };
+
+  return priorities.map((direction) => {
+    const delta = deltaByDirection[direction];
+    return { x: x + delta.x, y: y + delta.y };
+  });
+}
+
+function buildPathFromParents(start, end, parents) {
+  const path = [{ x: end.x, y: end.y }];
+  let currentKey = cellKey(end.x, end.y);
+
+  while (parents.has(currentKey)) {
+    const parent = parents.get(currentKey);
+    path.push({ x: parent.x, y: parent.y });
+    currentKey = cellKey(parent.x, parent.y);
+  }
+
+  path.reverse();
+  if (path.length === 0 || path[0].x !== start.x || path[0].y !== start.y) {
+    path.unshift({ x: start.x, y: start.y });
+  }
+
+  return path;
+}
+
+function directionBetween(from, to) {
+  if (to.x === from.x && to.y === from.y - 1) {
+    return "up";
+  }
+
+  if (to.x === from.x && to.y === from.y + 1) {
+    return "down";
+  }
+
+  if (to.x === from.x - 1 && to.y === from.y) {
+    return "left";
+  }
+
+  if (to.x === from.x + 1 && to.y === from.y) {
+    return "right";
+  }
+
+  return null;
+}
+
+function cellKey(x, y) {
+  return `${x},${y}`;
 }
 
 function beginNpcMove(direction) {
@@ -684,7 +790,8 @@ function isRoomFloorToken(x, y) {
     return false;
   }
 
-  return state.world.cells[y][x].floor === "RM";
+  const glyph = FLOOR_GLYPHS[state.world.cells[y][x].floor];
+  return Boolean(glyph && glyph.room);
 }
 
 function isNpcWalkable(x, y) {
@@ -699,7 +806,12 @@ function isNpcWalkable(x, y) {
 function performActivity(activityId, options = {}) {
   const activity = ACTIVITY_DEFS.find((item) => item.id === activityId);
   if (!activity) {
-    return;
+    return false;
+  }
+
+  if (!isActivityAllowedAtCurrentTile(activity.id)) {
+    appendLog(`${activity.label} so pode acontecer sobre tiles ${activity.tileToken}.`);
+    return false;
   }
 
   const record = getOrCreateActivityRecord(activity.id);
@@ -742,19 +854,34 @@ function performActivity(activityId, options = {}) {
   appendLog(
     `${prefix}${summary}. Resultado ${statusLabel} (${roll}/10), gostar ${record.taxa_gostar}, qualidade ${record.taxa_qualidade}.`
   );
+  return true;
 }
 
 function startActivityVisual(activity) {
-  if (!activity.assetKey || !assets.activityIcons[activity.assetKey]) {
+  if (!activity.balloonAssetKey || !assets.activityBalloons[activity.balloonAssetKey]) {
     return;
   }
 
   state.activityVisual = {
-    assetKey: activity.assetKey,
+    assetKey: activity.balloonAssetKey,
     label: activity.label,
     elapsedMs: 0,
     durationMs: ACTIVITY_VISUAL_MS,
   };
+}
+
+function getRequiredTileToken(activityId) {
+  return ACTIVITY_DEFS.find((item) => item.id === activityId)?.tileToken || null;
+}
+
+function isActivityAllowedAtCurrentTile(activityId) {
+  const tileToken = getRequiredTileToken(activityId);
+  if (!tileToken) {
+    return true;
+  }
+
+  const { x, y } = state.character.fisico.pos;
+  return state.world.cells[y][x].floor === tileToken;
 }
 
 function getOrCreateActivityRecord(activityId) {
@@ -853,7 +980,7 @@ function drawCell(x, y, cell) {
   const screenY = y * TILE_SIZE;
   const tileInfo = getTileInfo(x, y);
 
-  if (cell.floor === "RM") {
+  if (tileInfo.room) {
     const tileImage = assets.border[tileInfo.variant] || assets.border.center;
 
     if (tileImage) {
@@ -861,6 +988,10 @@ function drawCell(x, y, cell) {
     } else {
       ctx.fillStyle = "#6a8155";
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+    }
+
+    if (tileInfo.walkable && tileInfo.floorAssetKey && assets.activityFloors[tileInfo.floorAssetKey]) {
+      ctx.drawImage(assets.activityFloors[tileInfo.floorAssetKey], screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
 
     if (!tileInfo.walkable) {
@@ -911,7 +1042,7 @@ function drawActivityVisual(renderPosition) {
     return;
   }
 
-  const image = assets.activityIcons[state.activityVisual.assetKey];
+  const image = assets.activityBalloons[state.activityVisual.assetKey];
   if (!image) {
     return;
   }
@@ -962,16 +1093,23 @@ function getTileInfo(x, y) {
       walkable: false,
       collidable: true,
       variant: "void",
+      room: false,
+      floorAssetKey: null,
+      token: null,
     };
   }
 
   const cell = state.world.cells[y][x];
+  const glyph = FLOOR_GLYPHS[cell.floor] || FLOOR_GLYPHS.WL;
   if (cell.floor === "WL") {
     return {
-      label: "parede direta",
+      label: glyph.label,
       walkable: false,
       collidable: true,
       variant: "wall_block",
+      room: false,
+      floorAssetKey: null,
+      token: cell.floor,
     };
   }
 
@@ -979,10 +1117,13 @@ function getTileInfo(x, y) {
   const walkable = variant === "center";
 
   return {
-    label: walkable ? "piso livre" : `parede bordada (${variant})`,
+    label: walkable ? glyph.label : `parede bordada (${variant})`,
     walkable,
     collidable: !walkable,
     variant,
+    room: Boolean(glyph.room),
+    floorAssetKey: glyph.floorAssetKey || null,
+    token: cell.floor,
   };
 }
 
@@ -1150,8 +1291,8 @@ function renderActivityCards() {
       return item.atividade === activity.id;
     });
     const activeClass = state.lastActivityId === activity.id ? " active" : "";
-    const iconMarkup = activity.assetKey
-      ? `<img class="activity-icon" src="${ACTIVITY_ICON_PATHS[activity.assetKey]}" alt="${activity.label}" />`
+    const iconMarkup = activity.floorAssetKey
+      ? `<img class="activity-icon" src="${ACTIVITY_ASSET_PATHS[activity.floorAssetKey].floor}" alt="${activity.label}" />`
       : `<span class="activity-placeholder">TXT</span>`;
     const statsLabel = record
       ? `gostar ${record.taxa_gostar} | qualidade ${record.taxa_qualidade}`
@@ -1177,7 +1318,7 @@ function renderActivities() {
 
   if (activityRecords.length === 0) {
     dom.activityView.textContent =
-      "A IA ainda nao escolheu nenhuma atividade.\n\nA viewport usa animacao de caminhada por tile.\nQuando a necessidade apertar, a IA troca para comida ou decoracao.";
+      "A IA ainda nao escolheu nenhuma atividade.\n\nA viewport usa animacao de caminhada por tile.\nComida so acontece em CK e jarro so acontece em JR.";
     return;
   }
 
@@ -1210,6 +1351,8 @@ function renderLegend() {
     "",
     "Legenda:",
     "  RM = piso com borda automatica",
+    "  CK = tile de comida; so faz comida ali",
+    "  JR = tile de jarro; so faz decoracao ali",
     "  WL = parede direta do mapa",
     "  Apenas a variante center e caminhavel",
     "  O RAW segue por tile; a viewport interpola cada passo visual",
@@ -1293,8 +1436,14 @@ async function loadAssets() {
     Promise.all(NPC_SPRITES.esquerda.map((src) => loadImage(src))),
     Promise.all(NPC_SPRITES.direita.map((src) => loadImage(src))),
     Promise.all(
-      Object.entries(ACTIVITY_ICON_PATHS).map(async ([key, src]) => {
-        return [key, await loadImage(src)];
+      Object.entries(ACTIVITY_ASSET_PATHS).map(async ([key, paths]) => {
+        return [
+          key,
+          {
+            floor: await loadImage(paths.floor),
+            balloon: await loadImage(paths.balloon),
+          },
+        ];
       })
     ),
   ]);
@@ -1303,8 +1452,9 @@ async function loadAssets() {
     assets.border[key] = image;
   });
 
-  activityEntries.forEach(([key, image]) => {
-    assets.activityIcons[key] = image;
+  activityEntries.forEach(([key, images]) => {
+    assets.activityFloors[key] = images.floor;
+    assets.activityBalloons[key] = images.balloon;
   });
 
   assets.npc.esquerda = leftFrames.filter(Boolean);
