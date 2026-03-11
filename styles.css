@@ -167,8 +167,12 @@ pre {
 }
 
 #game-canvas {
-  width: 100%;
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 140px);
+  height: auto;
   display: block;
+  margin: 0 auto;
   border-radius: 20px;
   border: 1px solid rgba(140, 168, 109, 0.24);
   background:

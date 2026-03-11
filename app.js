@@ -172,6 +172,7 @@ const dom = {
   aiSummary: document.getElementById("ai-summary"),
 };
 
+syncCanvasToWorld(baseWorld);
 const ctx = dom.canvas.getContext("2d");
 
 const assets = {
@@ -231,6 +232,15 @@ function bindUiEvents() {
   dom.copyMapButton?.addEventListener("click", () => {
     void handleCopyMapClick();
   });
+}
+
+function syncCanvasToWorld(world) {
+  if (!dom.canvas || !world) {
+    return;
+  }
+
+  dom.canvas.width = world.width * TILE_SIZE;
+  dom.canvas.height = world.height * TILE_SIZE;
 }
 
 async function handleCopyMapClick() {
