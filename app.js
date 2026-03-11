@@ -38,7 +38,7 @@ const AI_MODE_META = {
   decorating: {
     title: "buscar decoracao",
     summary:
-      "A felicidade caiu. O NPC anda tile por tile ate um dos dois tiles JR e so faz jarro ali.",
+      "A felicidade caiu. O NPC anda tile por tile ate um dos tiles JR e so faz jarro ali.",
   },
   resting: {
     title: "descansando",
@@ -153,7 +153,7 @@ const WORLD_LAYOUT = [
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "JR", "JR", "RM", "RM"],
+    floor: ["RM", "RM", "RM", "JR", "RM", "RM"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
@@ -161,23 +161,23 @@ const WORLD_LAYOUT = [
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, "CH", EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["WL", "RM", "RM", "RM", "RM", "WL"],
+    floor: ["WL", "RM", "CR", "RM", "RM", "WL"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "RM", "CR", "RM", "RM", "RM"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "CK", "CK", "RM", "RM"],
+    floor: ["RM", "RM", "CR", "CR", "CR", "JR"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "CR", "CR", "CR", "CR", "JR"],
   },
   {
     entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
-    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+    floor: ["RM", "CK", "CK", "RM", "RM", "RM"],
   },
 ];
 
@@ -585,7 +585,7 @@ function runNpcTurn() {
 }
 
 function shouldStartCookingTask() {
-  return state.aiMode === "wandering" && state.activityCooldownMs === 0 && randomInt(1, 12) === 1;
+  return state.aiMode === "wandering" && state.activityCooldownMs === 0 && worldHasFloorToken("CK") && randomInt(1, 12) === 1;
 }
 
 function startEatingTask() {
@@ -943,6 +943,10 @@ function getAdjacentOptions() {
       };
     })
     .filter((option) => isNpcWalkable(option.target.x, option.target.y));
+}
+
+function worldHasFloorToken(tileToken) {
+  return state.world.cells.some((row) => row.some((cell) => cell.floor === tileToken));
 }
 
 function findPathToFloorToken(tileToken, mode) {
