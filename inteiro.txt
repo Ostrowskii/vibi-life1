@@ -1,0 +1,57 @@
+PORTAR PARA LINGUAGEM SEM PONTO FLUTUANTE
+
+O que ja esta ok:
+- posicao do NPC
+- idade
+- status
+- grid
+- movimento por tile
+- decisoes da IA
+- taxas das atividades
+
+Essas partes ja estao modeladas com inteiros.
+
+Onde mudar:
+
+1. Aleatoriedade
+Arquivo: app.js
+Linha: randomInt()
+Hoje usa Math.random(), que gera float.
+Ao portar, trocar por um gerador de numeros inteiros.
+
+2. Tempo do loop
+Arquivo: app.js
+Trecho: loop(timestamp)
+Hoje usa requestAnimationFrame e timestamp do navegador.
+Ao portar, trocar por ticks inteiros ou milissegundos inteiros.
+
+3. Conversoes de tempo
+Arquivo: app.js
+Trechos: calculo de remainingSeconds e formatRemainingTime()
+Hoje faz divisoes para segundos e minutos.
+Ao portar, usar divisao inteira normal.
+
+4. Parser do mapa
+Arquivo: app.js
+Trechos: calculo de width e height
+Hoje divide por 4 e por 2.
+Ao portar, usar divisao inteira.
+
+5. Render visual do canvas
+Arquivo: app.js
+Trechos: rgba com alpha decimal, ellipse e Math.PI
+Isso e visual, nao e a logica principal do jogo.
+Se a linguagem futura nao for para browser/canvas, pode ignorar
+ou reimplementar de outro jeito.
+
+6. CSS
+Arquivo: styles.css
+Usa varios rgba(...) com valores decimais.
+Isso e apenas aparencia, nao e logica do jogo.
+
+Resumo:
+A logica principal do jogo ja esta quase toda em inteiro.
+Os pontos que mais exigem mudanca sao:
+- aleatoriedade
+- tempo baseado no navegador
+- render visual do canvas

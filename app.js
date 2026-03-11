@@ -1,17 +1,42 @@
 const TILE_SIZE = 48;
 const REAL_MS_PER_YEAR = 5 * 60 * 1000;
-const MOVE_COOLDOWN_MS = 120;
+const NPC_STEP_MS = 850;
+const NEED_DECAY_MS = 12000;
+const ACTIVITY_COOLDOWN_MS = 4200;
+const COMFORT_THRESHOLD = 70;
 const EMPTY_ENTITY = "  ";
 
 const FLOOR_GLYPHS = {
-  RM: { label: "sala", walkable: true, collidable: false },
-  CR: { label: "corredor", walkable: true, collidable: false },
-  WL: { label: "parede", walkable: false, collidable: true },
+  RM: { label: "piso bordado" },
+  WL: { label: "parede direta" },
 };
 
 const ENTITY_GLYPHS = {
   [EMPTY_ENTITY]: { label: "vazio" },
-  PL: { label: "personagem" },
+  PL: { label: "npc" },
+};
+
+const AI_MODE_META = {
+  wandering: {
+    title: "wandering",
+    summary:
+      "Todos os estados estao confortaveis. O NPC caminha aleatoriamente entre tiles adjacentes livres.",
+  },
+  feeding: {
+    title: "buscar comida",
+    summary:
+      "A saciedade caiu. O NPC tenta descer pelo mapa e cozinhar quando a rota estabiliza.",
+  },
+  decorating: {
+    title: "buscar decoracao",
+    summary:
+      "A felicidade caiu. O NPC tenta subir pelo mapa e decorar quando encontra um ponto util.",
+  },
+  resting: {
+    title: "descansando",
+    summary:
+      "Energia ou saude baixas. O NPC para para se recuperar antes de voltar a circular.",
+  },
 };
 
 const ACTIVITY_DEFS = [
@@ -45,7 +70,7 @@ const BORDER_TILE_PATHS = {
   inner_bot_lft: "assets/teste_chao_bordered/teste_chao_inner_bot_lft.png",
 };
 
-const PLAYER_SPRITES = {
+const NPC_SPRITES = {
   esquerda: [
     "assets/char_walk_left/frame_001.png",
     "assets/char_walk_left/frame_002.png",
@@ -68,26 +93,46 @@ const PLAYER_SPRITES = {
   ],
 };
 
-const WORLD_MAP_RAW = [
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-  "                        ",
-  " WL  WL  CR  CR  WL  WL ",
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-  "                        ",
-  " RM  RM  RM  RM  RM  RM ",
-].join("\n");
+const WORLD_LAYOUT = [
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, "PL", EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["WL", "WL", "RM", "RM", "WL", "WL"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+  {
+    entity: [EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY, EMPTY_ENTITY],
+    floor: ["RM", "RM", "RM", "RM", "RM", "RM"],
+  },
+];
+
+const WORLD_MAP_RAW = buildWorldRaw(WORLD_LAYOUT);
 
 const dom = {
   canvas: document.getElementById("game-canvas"),
@@ -101,58 +146,66 @@ const dom = {
   legendView: document.getElementById("legend-view"),
   stateView: document.getElementById("state-view"),
   logList: document.getElementById("log-list"),
+  aiMode: document.getElementById("ai-mode"),
+  aiSummary: document.getElementById("ai-summary"),
 };
 
 const ctx = dom.canvas.getContext("2d");
 
 const assets = {
   border: {},
-  player: {
+  npc: {
     esquerda: [],
     direita: [],
   },
 };
 
 const baseWorld = parseRawMap(WORLD_MAP_RAW);
+const npcSpawn = extractEntitySpawn(baseWorld, "PL") || { x: 2, y: 0 };
 
 const state = {
   world: baseWorld,
-  character: createCharacter(),
+  character: createCharacter(npcSpawn),
   log: [],
   elapsedMs: 0,
+  runtimeMs: 0,
   lastFrameTimestamp: 0,
   lastVisibleSecond: -1,
-  nextInputAt: 0,
+  needClockMs: 0,
+  activityCooldownMs: 0,
+  aiClockMs: 0,
+  needCycles: 0,
   moveCount: 0,
   playerFrame: 0,
+  lastDirection: null,
+  aiMode: "wandering",
   uiDirty: true,
 };
 
-bindEvents();
 bootstrap();
 
 async function bootstrap() {
   await loadAssets();
-  appendLog("Prototipo iniciado com um personagem de 18 anos.");
-  appendLog("Mapa RAW carregado a partir da string oficial.");
+  appendLog("Prototipo iniciado com um NPC autonomo de 18 anos.");
+  appendLog("Movimento manual removido. A IA anda sozinha por tiles adjacentes.");
   renderUi();
   state.uiDirty = false;
   requestAnimationFrame(loop);
 }
 
-function bindEvents() {
-  window.addEventListener("keydown", onKeyDown);
-
-  document.querySelectorAll("[data-move]").forEach((button) => {
-    button.addEventListener("click", () => attemptMove(button.dataset.move));
-  });
-
-  document.querySelectorAll("[data-activity]").forEach((button) => {
-    button.addEventListener("click", () => performActivity(button.dataset.activity));
-  });
+function buildWorldRaw(layout) {
+  return layout
+    .flatMap((row) => {
+      return [serializeTokens(row.entity), serializeTokens(row.floor)];
+    })
+    .join("\n");
 }
 
-function createCharacter() {
+function serializeTokens(tokens) {
+  return tokens.map((token) => ` ${token} `).join("");
+}
+
+function createCharacter(spawn) {
   return {
     status: {
       saude: 100,
@@ -162,7 +215,7 @@ function createCharacter() {
       age: 18,
     },
     fisico: {
-      pos: { x: 2, y: 1 },
+      pos: { x: spawn.x, y: spawn.y },
       direcao_olhar: "direita",
     },
     preferencias: {
@@ -205,6 +258,19 @@ function parseRawMap(rawMap) {
   return { width, height, cells };
 }
 
+function extractEntitySpawn(world, token) {
+  for (let y = 0; y < world.height; y += 1) {
+    for (let x = 0; x < world.width; x += 1) {
+      if (world.cells[y][x].entity === token) {
+        world.cells[y][x].entity = EMPTY_ENTITY;
+        return { x, y };
+      }
+    }
+  }
+
+  return null;
+}
+
 function normalizeRawLine(line) {
   if (line.length % 4 === 3) {
     return `${line} `;
@@ -234,7 +300,7 @@ function serializeWorldToRaw() {
 
     for (let x = 0; x < state.world.width; x += 1) {
       const cell = state.world.cells[y][x];
-      const entity = isPlayerAt(x, y) ? "PL" : cell.entity;
+      const entity = isNpcAt(x, y) ? "PL" : cell.entity;
       entityLine += ` ${entity} `;
       floorLine += ` ${cell.floor} `;
     }
@@ -252,12 +318,26 @@ function loop(timestamp) {
 
   const delta = Math.max(0, Math.round(timestamp - state.lastFrameTimestamp));
   state.lastFrameTimestamp = timestamp;
+  state.runtimeMs += delta;
   state.elapsedMs += delta;
+  state.needClockMs += delta;
+  state.aiClockMs += delta;
+  state.activityCooldownMs = Math.max(0, state.activityCooldownMs - delta);
 
   while (state.elapsedMs >= REAL_MS_PER_YEAR) {
     state.elapsedMs -= REAL_MS_PER_YEAR;
     state.character.status.age += 1;
     appendLog(`Passou mais um ano. Idade atual: ${state.character.status.age}.`);
+  }
+
+  while (state.needClockMs >= NEED_DECAY_MS) {
+    state.needClockMs -= NEED_DECAY_MS;
+    applyNaturalNeedDecay();
+  }
+
+  while (state.aiClockMs >= NPC_STEP_MS) {
+    state.aiClockMs -= NPC_STEP_MS;
+    runNpcTurn();
   }
 
   const remainingSeconds = Math.max(0, Math.floor((REAL_MS_PER_YEAR - state.elapsedMs) / 1000));
@@ -271,71 +351,205 @@ function loop(timestamp) {
   requestAnimationFrame(loop);
 }
 
-function onKeyDown(event) {
-  const directionByKey = {
-    ArrowUp: "up",
-    ArrowDown: "down",
-    ArrowLeft: "left",
-    ArrowRight: "right",
-    w: "up",
-    a: "left",
-    s: "down",
-    d: "right",
-    W: "up",
-    A: "left",
-    S: "down",
-    D: "right",
-  };
+function runNpcTurn() {
+  syncAiMode();
 
-  const direction = directionByKey[event.key];
-
-  if (!direction) {
+  if (state.aiMode === "resting") {
+    restTurn();
     return;
   }
 
-  event.preventDefault();
-  attemptMove(direction);
+  const activityId = activityForMode(state.aiMode);
+  if (activityId && state.activityCooldownMs === 0 && isInNeedZone(state.aiMode)) {
+    performActivity(activityId, { source: "ai" });
+    state.activityCooldownMs = ACTIVITY_COOLDOWN_MS;
+    return;
+  }
+
+  const direction = chooseAutonomousDirection(state.aiMode);
+  if (direction) {
+    moveNpc(direction);
+    return;
+  }
+
+  if (activityId && state.activityCooldownMs === 0) {
+    performActivity(activityId, { source: "ai" });
+    state.activityCooldownMs = ACTIVITY_COOLDOWN_MS;
+    return;
+  }
+
+  appendLog("O NPC ficou sem tiles adjacentes livres para caminhar.");
 }
 
-function attemptMove(direction) {
-  const now = performance.now();
-  if (now < state.nextInputAt) {
-    return;
+function syncAiMode() {
+  const nextMode = resolveAiMode();
+  if (nextMode !== state.aiMode) {
+    state.aiMode = nextMode;
+    appendLog(`Modo atual da IA: ${AI_MODE_META[nextMode].title}.`);
+  }
+}
+
+function resolveAiMode() {
+  const { saude, saciedade, felicidade, energia } = state.character.status;
+
+  if (saude <= 40 || energia <= 55) {
+    return "resting";
   }
 
-  const deltaByDirection = {
-    up: { x: 0, y: -1 },
-    down: { x: 0, y: 1 },
-    left: { x: -1, y: 0 },
-    right: { x: 1, y: 0 },
+  if (allNeedsComfortable()) {
+    return "wandering";
+  }
+
+  const weakestNeed = [
+    { key: "saciedade", value: saciedade, mode: "feeding" },
+    { key: "felicidade", value: felicidade, mode: "decorating" },
+    { key: "energia", value: energia, mode: "resting" },
+  ].sort((left, right) => left.value - right.value)[0];
+
+  return weakestNeed.mode;
+}
+
+function allNeedsComfortable() {
+  const { saude, saciedade, felicidade, energia } = state.character.status;
+  return (
+    saude >= COMFORT_THRESHOLD &&
+    saciedade >= COMFORT_THRESHOLD &&
+    felicidade >= COMFORT_THRESHOLD &&
+    energia >= COMFORT_THRESHOLD
+  );
+}
+
+function activityForMode(mode) {
+  if (mode === "feeding") {
+    return "fazer comida";
+  }
+
+  if (mode === "decorating") {
+    return "fazer decoracao";
+  }
+
+  return null;
+}
+
+function isInNeedZone(mode) {
+  const currentY = state.character.fisico.pos.y;
+  const options = getAdjacentOptions();
+
+  if (mode === "feeding") {
+    return currentY >= state.world.height - 3 || !options.some((option) => option.target.y > currentY);
+  }
+
+  if (mode === "decorating") {
+    return currentY <= 2 || !options.some((option) => option.target.y < currentY);
+  }
+
+  return true;
+}
+
+function restTurn() {
+  adjustStatus("energia", 4);
+
+  if (state.character.status.saude < 100) {
+    adjustStatus("saude", 1);
+  }
+
+  if (state.runtimeMs % 5000 < NPC_STEP_MS) {
+    appendLog("O NPC esta descansando para recuperar energia.");
+  }
+}
+
+function applyNaturalNeedDecay() {
+  state.needCycles += 1;
+  adjustStatus("saciedade", -1);
+  adjustStatus("energia", -1);
+
+  if (state.needCycles % 2 === 0) {
+    adjustStatus("felicidade", -1);
+  }
+
+  applyLowStatusConsequences();
+}
+
+function chooseAutonomousDirection(mode) {
+  const options = getAdjacentOptions();
+  if (options.length === 0) {
+    return null;
+  }
+
+  if (mode === "wandering") {
+    const filtered = filterImmediateBacktrack(options);
+    return sample(filtered.length > 0 ? filtered : options).direction;
+  }
+
+  const priorityByMode = {
+    feeding: ["down", "right", "left", "up"],
+    decorating: ["up", "left", "right", "down"],
+    resting: ["up", "down", "left", "right"],
   };
 
-  const delta = deltaByDirection[direction];
-  if (!delta) {
-    return;
+  const priorities = priorityByMode[mode] || priorityByMode.wandering;
+  const filtered = filterImmediateBacktrack(options);
+  const pool = filtered.length > 0 ? filtered : options;
+
+  for (const direction of priorities) {
+    const match = pool.find((option) => option.direction === direction);
+    if (match) {
+      return match.direction;
+    }
   }
 
-  const target = {
-    x: state.character.fisico.pos.x + delta.x,
-    y: state.character.fisico.pos.y + delta.y,
+  return pool[0].direction;
+}
+
+function filterImmediateBacktrack(options) {
+  const reverse = reverseDirection(state.lastDirection);
+  if (!reverse || options.length <= 1) {
+    return options;
+  }
+
+  return options.filter((option) => option.direction !== reverse);
+}
+
+function reverseDirection(direction) {
+  const reverseMap = {
+    up: "down",
+    down: "up",
+    left: "right",
+    right: "left",
   };
 
-  state.nextInputAt = now + MOVE_COOLDOWN_MS;
+  return reverseMap[direction] || null;
+}
 
-  if (!isInsideWorld(target.x, target.y)) {
-    appendLog("Limite do mapa alcancado.");
-    return;
+function getAdjacentOptions() {
+  const deltas = [
+    { direction: "up", x: 0, y: -1 },
+    { direction: "down", x: 0, y: 1 },
+    { direction: "left", x: -1, y: 0 },
+    { direction: "right", x: 1, y: 0 },
+  ];
+
+  return deltas
+    .map((delta) => {
+      return {
+        direction: delta.direction,
+        target: {
+          x: state.character.fisico.pos.x + delta.x,
+          y: state.character.fisico.pos.y + delta.y,
+        },
+      };
+    })
+    .filter((option) => isNpcWalkable(option.target.x, option.target.y));
+}
+
+function moveNpc(direction) {
+  const target = getAdjacentOptions().find((option) => option.direction === direction);
+  if (!target) {
+    return false;
   }
 
-  const targetCell = state.world.cells[target.y][target.x];
-  const floorDef = FLOOR_GLYPHS[targetCell.floor] || FLOOR_GLYPHS.WL;
-
-  if (!floorDef.walkable) {
-    appendLog(`Colisao com ${floorDef.label}.`);
-    return;
-  }
-
-  state.character.fisico.pos = target;
+  state.character.fisico.pos = target.target;
+  state.lastDirection = direction;
 
   if (direction === "left") {
     state.character.fisico.direcao_olhar = "esquerda";
@@ -346,31 +560,48 @@ function attemptMove(direction) {
   }
 
   state.moveCount += 1;
-  state.playerFrame = (state.playerFrame + 1) % PLAYER_SPRITES.direita.length;
-
+  state.playerFrame = (state.playerFrame + 1) % Math.max(assets.npc.direita.length, 1);
   adjustStatus("energia", -1);
 
-  if (state.moveCount % 3 === 0) {
+  if (state.moveCount % 2 === 0) {
     adjustStatus("saciedade", -1);
   }
 
-  if (state.moveCount % 4 === 0) {
+  if (state.moveCount % 3 === 0) {
     adjustStatus("felicidade", -1);
   }
 
   applyLowStatusConsequences();
-  appendLog(`Moveu para (${target.x}, ${target.y}) no ${floorDef.label}.`);
+  state.uiDirty = true;
+  return true;
 }
 
 function isInsideWorld(x, y) {
   return x >= 0 && x < state.world.width && y >= 0 && y < state.world.height;
 }
 
-function isPlayerAt(x, y) {
+function isNpcAt(x, y) {
   return state.character.fisico.pos.x === x && state.character.fisico.pos.y === y;
 }
 
-function performActivity(activityId) {
+function isRoomFloorToken(x, y) {
+  if (!isInsideWorld(x, y)) {
+    return false;
+  }
+
+  return state.world.cells[y][x].floor === "RM";
+}
+
+function isNpcWalkable(x, y) {
+  if (!isInsideWorld(x, y)) {
+    return false;
+  }
+
+  const tileInfo = getTileInfo(x, y);
+  return tileInfo.walkable;
+}
+
+function performActivity(activityId, options = {}) {
   const activity = ACTIVITY_DEFS.find((item) => item.id === activityId);
   if (!activity) {
     return;
@@ -408,10 +639,11 @@ function performActivity(activityId) {
 
   applyLowStatusConsequences();
 
+  const prefix = options.source === "ai" ? "A IA escolheu: " : "";
   const statusLabel = succeeded ? "deu certo" : "falhou";
   const summary = succeeded ? activity.successLabel : `${activity.label.toLowerCase()} e falhou`;
   appendLog(
-    `${summary}. Resultado ${statusLabel} (${roll}/10), gostar ${record.taxa_gostar}, qualidade ${record.taxa_qualidade}.`
+    `${prefix}${summary}. Resultado ${statusLabel} (${roll}/10), gostar ${record.taxa_gostar}, qualidade ${record.taxa_qualidade}.`
   );
 }
 
@@ -452,7 +684,13 @@ function levelBonus(value) {
 }
 
 function adjustStatus(key, delta) {
-  state.character.status[key] = clamp(state.character.status[key] + delta, 0, 100);
+  const current = state.character.status[key];
+  const next = clamp(current + delta, 0, 100);
+
+  if (next !== current) {
+    state.character.status[key] = next;
+    state.uiDirty = true;
+  }
 }
 
 function applyLowStatusConsequences() {
@@ -473,6 +711,7 @@ function applyLowStatusConsequences() {
 
 function renderUi() {
   drawWorld();
+  renderBehavior();
   renderStatus();
   renderMeta();
   renderActivities();
@@ -495,39 +734,38 @@ function drawWorld() {
     }
   }
 
-  drawPlayer();
+  drawNpc();
 }
 
 function drawCell(x, y, cell) {
   const screenX = x * TILE_SIZE;
   const screenY = y * TILE_SIZE;
-  const floor = FLOOR_GLYPHS[cell.floor] || FLOOR_GLYPHS.WL;
+  const tileInfo = getTileInfo(x, y);
 
-  if (floor.walkable) {
-    const variant = selectBorderVariant(x, y);
-    const tileImage = assets.border[variant];
+  if (cell.floor === "RM") {
+    const tileImage = assets.border[tileInfo.variant] || assets.border.center;
 
     if (tileImage) {
       ctx.drawImage(tileImage, screenX, screenY, TILE_SIZE, TILE_SIZE);
     } else {
-      ctx.fillStyle = cell.floor === "CR" ? "#5b7650" : "#6a8155";
+      ctx.fillStyle = "#6a8155";
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
-      ctx.strokeStyle = "rgba(12, 15, 12, 0.38)";
-      ctx.strokeRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
 
-    if (cell.floor === "CR") {
-      ctx.fillStyle = "rgba(242, 231, 207, 0.08)";
-      ctx.fillRect(screenX + 8, screenY + 20, TILE_SIZE - 16, 8);
+    if (!tileInfo.walkable) {
+      ctx.fillStyle = "rgba(16, 12, 9, 0.34)";
+      ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+      ctx.fillStyle = "rgba(31, 22, 17, 0.8)";
+      ctx.fillRect(screenX, screenY, TILE_SIZE, 10);
     }
   } else {
-    ctx.fillStyle = "#181410";
+    ctx.fillStyle = "#17120f";
     ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
 
-    if (hasAdjacentWalkable(x, y)) {
-      ctx.fillStyle = "#2a221a";
+    if (hasAdjacentRoomFloor(x, y)) {
+      ctx.fillStyle = "#2b2218";
       ctx.fillRect(screenX, screenY, TILE_SIZE, 10);
-      ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+      ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
       ctx.fillRect(screenX, screenY + 10, TILE_SIZE, TILE_SIZE - 10);
     }
   }
@@ -536,10 +774,10 @@ function drawCell(x, y, cell) {
   ctx.strokeRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
 }
 
-function drawPlayer() {
+function drawNpc() {
   const { x, y } = state.character.fisico.pos;
   const facing = state.character.fisico.direcao_olhar;
-  const frames = assets.player[facing];
+  const frames = assets.npc[facing];
   const frame = frames[state.playerFrame] || frames[0];
   const shadowX = x * TILE_SIZE + 10;
   const shadowY = y * TILE_SIZE + 31;
@@ -557,15 +795,46 @@ function drawPlayer() {
   }
 }
 
+function getTileInfo(x, y) {
+  if (!isInsideWorld(x, y)) {
+    return {
+      label: "fora do mapa",
+      walkable: false,
+      collidable: true,
+      variant: "void",
+    };
+  }
+
+  const cell = state.world.cells[y][x];
+  if (cell.floor === "WL") {
+    return {
+      label: "parede direta",
+      walkable: false,
+      collidable: true,
+      variant: "wall_block",
+    };
+  }
+
+  const variant = selectBorderVariant(x, y);
+  const walkable = variant === "center";
+
+  return {
+    label: walkable ? "piso livre" : `parede bordada (${variant})`,
+    walkable,
+    collidable: !walkable,
+    variant,
+  };
+}
+
 function selectBorderVariant(x, y) {
-  const up = isWalkableFloor(x, y - 1);
-  const right = isWalkableFloor(x + 1, y);
-  const down = isWalkableFloor(x, y + 1);
-  const left = isWalkableFloor(x - 1, y);
-  const upLeft = isWalkableFloor(x - 1, y - 1);
-  const upRight = isWalkableFloor(x + 1, y - 1);
-  const downRight = isWalkableFloor(x + 1, y + 1);
-  const downLeft = isWalkableFloor(x - 1, y + 1);
+  const up = isRoomFloorToken(x, y - 1);
+  const right = isRoomFloorToken(x + 1, y);
+  const down = isRoomFloorToken(x, y + 1);
+  const left = isRoomFloorToken(x - 1, y);
+  const upLeft = isRoomFloorToken(x - 1, y - 1);
+  const upRight = isRoomFloorToken(x + 1, y - 1);
+  const downRight = isRoomFloorToken(x + 1, y + 1);
+  const downLeft = isRoomFloorToken(x - 1, y + 1);
 
   if (up && right && down && left) {
     if (!upLeft) {
@@ -622,23 +891,19 @@ function selectBorderVariant(x, y) {
   return "center";
 }
 
-function isWalkableFloor(x, y) {
-  if (!isInsideWorld(x, y)) {
-    return false;
-  }
-
-  const cell = state.world.cells[y][x];
-  const floor = FLOOR_GLYPHS[cell.floor] || FLOOR_GLYPHS.WL;
-  return floor.walkable;
+function hasAdjacentRoomFloor(x, y) {
+  return (
+    isRoomFloorToken(x, y - 1) ||
+    isRoomFloorToken(x + 1, y) ||
+    isRoomFloorToken(x, y + 1) ||
+    isRoomFloorToken(x - 1, y)
+  );
 }
 
-function hasAdjacentWalkable(x, y) {
-  return (
-    isWalkableFloor(x, y - 1) ||
-    isWalkableFloor(x + 1, y) ||
-    isWalkableFloor(x, y + 1) ||
-    isWalkableFloor(x - 1, y)
-  );
+function renderBehavior() {
+  const aiMeta = AI_MODE_META[state.aiMode];
+  dom.aiMode.textContent = aiMeta.title;
+  dom.aiSummary.textContent = aiMeta.summary;
 }
 
 function renderStatus() {
@@ -670,6 +935,7 @@ function renderStatus() {
 
 function renderMeta() {
   const activitiesCount = state.character.preferencias.atividades_praticadas.length;
+  const currentTile = getTileInfo(state.character.fisico.pos.x, state.character.fisico.pos.y);
 
   dom.metaGrid.innerHTML = [
     { label: "Idade", value: `${state.character.status.age} anos` },
@@ -682,16 +948,16 @@ function renderMeta() {
       value: state.character.fisico.direcao_olhar,
     },
     {
-      label: "Atividades ja praticadas",
-      value: `${activitiesCount}`,
-    },
-    {
-      label: "Conhecidos",
-      value: `${state.character.conhecidos.length}`,
+      label: "Modo da IA",
+      value: AI_MODE_META[state.aiMode].title,
     },
     {
       label: "Tile atual",
-      value: currentFloorLabel(),
+      value: currentTile.label,
+    },
+    {
+      label: "Atividades ja praticadas",
+      value: `${activitiesCount}`,
     },
   ]
     .map((item) => {
@@ -705,18 +971,12 @@ function renderMeta() {
     .join("");
 }
 
-function currentFloorLabel() {
-  const tile = state.world.cells[state.character.fisico.pos.y][state.character.fisico.pos.x];
-  const floor = FLOOR_GLYPHS[tile.floor] || FLOOR_GLYPHS.WL;
-  return floor.label;
-}
-
 function renderActivities() {
   const activityRecords = state.character.preferencias.atividades_praticadas;
 
   if (activityRecords.length === 0) {
     dom.activityView.textContent =
-      "Nenhuma atividade praticada ainda.\n\nAo praticar pela primeira vez:\n- gostar vira um inteiro de 0 a 10\n- sucesso base fica em 8\n- qualidade inicial vai de 1 a 5";
+      "A IA ainda nao escolheu nenhuma atividade.\n\nQuando a necessidade apertar:\n- comida melhora a saciedade\n- decoracao ajuda a felicidade\n- descanso recupera energia sem mover";
     return;
   }
 
@@ -739,22 +999,19 @@ function renderTerminal() {
 }
 
 function renderLegend() {
-  const tile = state.world.cells[state.character.fisico.pos.y][state.character.fisico.pos.x];
-  const floor = FLOOR_GLYPHS[tile.floor] || FLOOR_GLYPHS.WL;
-  const currentEntity = isPlayerAt(state.character.fisico.pos.x, state.character.fisico.pos.y)
-    ? ENTITY_GLYPHS.PL
-    : ENTITY_GLYPHS[tile.entity] || ENTITY_GLYPHS[EMPTY_ENTITY];
+  const tileInfo = getTileInfo(state.character.fisico.pos.x, state.character.fisico.pos.y);
 
   dom.legendView.textContent = [
-    `Tile atual: ${tile.floor} -> ${floor.label}`,
-    `Colidivel: ${floor.collidable ? "sim" : "nao"}`,
-    `Entidade atual: ${currentEntity.label}`,
+    `Tile atual: ${tileInfo.label}`,
+    `Variante visual: ${tileInfo.variant}`,
+    `Caminhavel: ${tileInfo.walkable ? "sim" : "nao"}`,
+    `Entidade atual: ${ENTITY_GLYPHS.PL.label}`,
     "",
     "Legenda:",
-    "  RM = sala transitavel",
-    "  CR = corredor transitavel",
-    "  WL = parede colidivel",
-    "  PL = personagem",
+    "  RM = piso com borda automatica",
+    "  WL = parede direta do mapa",
+    "  Apenas a variante center e caminhavel",
+    "  O NPC anda apenas para tiles adjacentes",
   ].join("\n");
 }
 
@@ -768,6 +1025,11 @@ function characterSnapshot() {
     fisico: state.character.fisico,
     preferencias: state.character.preferencias,
     conhecidos: state.character.conhecidos,
+    ia: {
+      modo: state.aiMode,
+      direcao_anterior: state.lastDirection,
+      cooldown_atividade_ms: state.activityCooldownMs,
+    },
   };
 }
 
@@ -791,7 +1053,11 @@ function formatRemainingTime(ms) {
 }
 
 function appendLog(message) {
-  state.log.unshift(message);
+  if (state.log[0] !== message) {
+    state.log.unshift(message);
+  }
+
+  state.log = state.log.slice(0, 40);
   state.uiDirty = true;
 }
 
@@ -814,15 +1080,16 @@ async function loadAssets() {
         return [key, await loadImage(src)];
       })
     ),
-    Promise.all(PLAYER_SPRITES.esquerda.map((src) => loadImage(src))),
-    Promise.all(PLAYER_SPRITES.direita.map((src) => loadImage(src))),
+    Promise.all(NPC_SPRITES.esquerda.map((src) => loadImage(src))),
+    Promise.all(NPC_SPRITES.direita.map((src) => loadImage(src))),
   ]);
 
   borderEntries.forEach(([key, image]) => {
     assets.border[key] = image;
   });
-  assets.player.esquerda = leftFrames.filter(Boolean);
-  assets.player.direita = rightFrames.filter(Boolean);
+
+  assets.npc.esquerda = leftFrames.filter(Boolean);
+  assets.npc.direita = rightFrames.filter(Boolean);
 }
 
 function loadImage(src) {

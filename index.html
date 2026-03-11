@@ -12,7 +12,7 @@
         <p class="eyebrow">Primeiro prototipo de Vibi Life</p>
         <h1>Vibi Life</h1>
         <p class="lead">
-          Mapa RAW, visualizacao em terminal e um personagem unico com idade,
+          Mapa RAW, visualizacao em terminal e um NPC autonomo com idade,
           status, preferencias e atividades.
         </p>
       </header>
@@ -22,7 +22,7 @@
           <div class="panel-top">
             <div>
               <p class="panel-label">Mundo</p>
-              <h2>Mapa 6 x 9 com duas salas e corredor central</h2>
+              <h2>Mapa 6 x 9 com piso bordado e paredes automaticas</h2>
             </div>
             <div class="time-chip">
               <span>Ano atual</span>
@@ -34,16 +34,14 @@
           <canvas id="game-canvas" width="288" height="432" aria-label="Mapa do jogo"></canvas>
 
           <div class="controls-card">
-            <p class="panel-label">Controles</p>
-            <p class="help">
-              Setas ou WASD movem em tiles inteiros. Nao existe diagonal.
+            <p class="panel-label">Comportamento do NPC</p>
+            <p class="help" id="ai-summary">
+              O NPC escolhe sozinho passos adjacentes. Se todos os estados
+              estiverem confortaveis, entra em wandering.
             </p>
-
-            <div class="dpad" aria-label="Controles de movimento">
-              <button type="button" class="move-btn up" data-move="up">Cima</button>
-              <button type="button" class="move-btn left" data-move="left">Esq</button>
-              <button type="button" class="move-btn down" data-move="down">Baixo</button>
-              <button type="button" class="move-btn right" data-move="right">Dir</button>
+            <div class="ai-mode-row">
+              <span>Modo atual</span>
+              <strong id="ai-mode">wandering</strong>
             </div>
           </div>
         </section>
@@ -70,22 +68,15 @@
             <div class="panel-top compact">
               <div>
                 <p class="panel-label">Atividades</p>
-                <h2>Acoes iniciais</h2>
+                <h2>Escolhas da IA</h2>
               </div>
               <span class="pill">sucesso base 8/10</span>
             </div>
 
-            <div class="activity-grid">
-              <button type="button" class="activity-btn" data-activity="organizar">
-                Organizar
-              </button>
-              <button type="button" class="activity-btn" data-activity="fazer decoracao">
-                Fazer decoracao
-              </button>
-              <button type="button" class="activity-btn" data-activity="fazer comida">
-                Fazer comida
-              </button>
-            </div>
+            <p class="help compact-help">
+              Sem controles manuais. A IA escolhe quando descansar, fazer
+              comida, decorar ou apenas andar aleatoriamente.
+            </p>
 
             <pre id="activity-view" class="mono-box"></pre>
           </section>
