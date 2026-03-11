@@ -1539,9 +1539,7 @@ function drawActivityVisual(renderPosition) {
     return;
   }
 
-  ctx.fillStyle = "rgba(18, 15, 12, 0.84)";
-  ctx.fillRect(renderPosition.x + 14, renderPosition.y - 20, 20, 20);
-  ctx.drawImage(image, renderPosition.x + 16, renderPosition.y - 18, 16, 16);
+  ctx.drawImage(image, renderPosition.x + 8, renderPosition.y - 34, 32, 32);
 }
 
 function getVisibleBalloonKey() {
