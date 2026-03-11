@@ -211,11 +211,14 @@ const state = {
   aiMode: "wandering",
   lastActivityId: null,
   task: null,
+  jarPlan: null,
   motion: null,
   route: null,
   activityVisual: null,
   uiDirty: true,
 };
+
+state.world.placeableGroundTiles = buildPlaceableGroundTileCache();
 
 bootstrap();
 
@@ -739,21 +742,45 @@ function finishEatingTask() {
 }
 
 function runJarPlacementTurn() {
-  if (tryPlaceCarriedJarAdjacent()) {
+  if (state.character.inventario.item_carregado !== "JA") {
+    clearJarPlan();
     return;
+  }
+
+  if (!state.jarPlan) {
+    state.jarPlan = chooseJarPlan();
+  }
+
+  if (!state.jarPlan) {
+    appendLog("O NPC esta com um jarro pronto, mas nao encontrou lugar valido para decidir.");
+    return;
+  }
+
+  if (state.jarPlan.mode === "place") {
+    const failedTargetKey = state.jarPlan.target ? cellKey(state.jarPlan.target.x, state.jarPlan.target.y) : null;
+    if (runJarGroundPlacementTurn(state.jarPlan.target)) {
+      return;
+    }
+
+    clearJarPlan();
+    state.jarPlan = chooseJarPlan({ excludeKey: failedTargetKey });
+    if (state.jarPlan?.mode === "place" && runJarGroundPlacementTurn(state.jarPlan.target)) {
+      return;
+    }
   }
 
   if (tryStoreCarriedJarInChest()) {
+    clearJarPlan();
     return;
   }
 
-  const direction = chooseDirectionToAdjacentChest();
-  if (direction) {
-    beginNpcMove(direction);
+  const path = findPathToAdjacentEntityToken("CH", "resting");
+  if (path && path.length > 1) {
+    beginNpcPath(path, "jar");
     return;
   }
 
-  appendLog("O NPC esta com um jarro pronto, mas nao encontrou tile RM adjacente livre nem caminho ate o bau.");
+  appendLog("O NPC esta com um jarro pronto, mas nao encontrou caminho ate o bau.");
 }
 
 function syncAiMode() {
@@ -1229,24 +1256,139 @@ function isNpcWalkable(x, y) {
   return tileInfo.walkable;
 }
 
-function getAdjacentJarPlacementTarget() {
-  const { x, y } = state.character.fisico.pos;
-  const candidates = [
-    { x: x + 1, y },
-    { x: x - 1, y },
-    { x, y: y + 1 },
-    { x, y: y - 1 },
-  ];
+function buildPlaceableGroundTileCache() {
+  const reachable = collectReachableWalkableTiles(state.character.fisico.pos.x, state.character.fisico.pos.y);
+  return reachable.filter((tile) => {
+    const cell = state.world.cells[tile.y][tile.x];
+    return cell.floor === "RM" && cell.entity === EMPTY_ENTITY;
+  });
+}
 
-  return candidates.find((candidate) => {
-    if (!isInsideWorld(candidate.x, candidate.y)) {
-      return false;
+function collectReachableWalkableTiles(startX, startY) {
+  const queue = [{ x: startX, y: startY }];
+  const visited = new Set([cellKey(startX, startY)]);
+  const reachable = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    reachable.push({ x: current.x, y: current.y });
+
+    for (const neighbor of neighborsByPriority(current.x, current.y, ["up", "down", "left", "right"])) {
+      const key = cellKey(neighbor.x, neighbor.y);
+      if (visited.has(key) || !isNpcWalkable(neighbor.x, neighbor.y)) {
+        continue;
+      }
+
+      visited.add(key);
+      queue.push(neighbor);
     }
+  }
 
-    const cell = state.world.cells[candidate.y][candidate.x];
-    const tileInfo = getTileInfo(candidate.x, candidate.y);
-    return tileInfo.baseWalkable && cell.floor === "RM" && cell.entity === EMPTY_ENTITY;
-  }) || null;
+  return reachable;
+}
+
+function getAvailableGroundPlacementTiles() {
+  const baseTiles = state.world.placeableGroundTiles || [];
+  return baseTiles.filter((tile) => isTileAvailableForGroundItem(tile.x, tile.y));
+}
+
+function isTileAvailableForGroundItem(x, y) {
+  if (!isInsideWorld(x, y) || isNpcAt(x, y)) {
+    return false;
+  }
+
+  const cell = state.world.cells[y][x];
+  return cell.floor === "RM" && cell.entity === EMPTY_ENTITY;
+}
+
+function chooseJarPlan(options = {}) {
+  const availableTiles = getAvailableGroundPlacementTiles().filter((tile) => {
+    return !options.excludeKey || cellKey(tile.x, tile.y) !== options.excludeKey;
+  });
+
+  if (availableTiles.length === 0) {
+    appendLog("Nao ha tile RM alcancavel livre para colocar jarro. O NPC vai guardar no bau.");
+    return { mode: "store" };
+  }
+
+  const zeroDecorationTiles = availableTiles.filter((tile) => getDecorationLevelAt(tile.x, tile.y) === 0);
+  const shouldPreferGround = zeroDecorationTiles.length > 0 ? randomInt(1, 10) <= 7 : randomInt(1, 10) === 1;
+
+  if (!shouldPreferGround) {
+    appendLog("O NPC decidiu guardar o jarro no bau.");
+    return { mode: "store" };
+  }
+
+  const pool = zeroDecorationTiles.length > 0 ? zeroDecorationTiles : availableTiles;
+  const target = sample(pool);
+  appendLog(
+    zeroDecorationTiles.length > 0
+      ? `O NPC escolheu colocar o jarro em um tile sem decoracao em (${target.x}, ${target.y}).`
+      : `O NPC escolheu colocar o jarro no mapa em (${target.x}, ${target.y}).`
+  );
+  return {
+    mode: "place",
+    target: { x: target.x, y: target.y },
+  };
+}
+
+function runJarGroundPlacementTurn(target) {
+  if (!target || !isTileAvailableForGroundItem(target.x, target.y)) {
+    return false;
+  }
+
+  const { x, y } = state.character.fisico.pos;
+  if (isAdjacentPosition(x, y, target.x, target.y)) {
+    return placeCarriedJarAt(target.x, target.y);
+  }
+
+  const path = findPathToMatchingTile((nextX, nextY) => isAdjacentPosition(nextX, nextY, target.x, target.y), "decorating");
+  if (path && path.length > 1) {
+    beginNpcPath(path, "jar");
+    return true;
+  }
+
+  appendLog(`O NPC nao encontrou caminho ate um tile adjacente para colocar o jarro em (${target.x}, ${target.y}).`);
+  return false;
+}
+
+function placeCarriedJarAt(x, y) {
+  if (state.character.inventario.item_carregado !== "JA" || !isTileAvailableForGroundItem(x, y)) {
+    return false;
+  }
+
+  state.world.cells[y][x].entity = "JA";
+  state.character.inventario.item_carregado = null;
+  clearJarPlan();
+  state.uiDirty = true;
+  appendLog(`O NPC colocou um jarro em (${x}, ${y}). Esse tile agora bloqueia passagem.`);
+  return true;
+}
+
+function getDecorationLevelAt(x, y) {
+  let total = 0;
+
+  for (let row = 0; row < state.world.height; row += 1) {
+    for (let column = 0; column < state.world.width; column += 1) {
+      if (state.world.cells[row][column].entity !== "JA") {
+        continue;
+      }
+
+      if (manhattanDistance(column, row, x, y) <= 2) {
+        total += 1;
+      }
+    }
+  }
+
+  return total;
+}
+
+function manhattanDistance(fromX, fromY, toX, toY) {
+  return Math.abs(fromX - toX) + Math.abs(fromY - toY);
+}
+
+function isAdjacentPosition(fromX, fromY, toX, toY) {
+  return manhattanDistance(fromX, fromY, toX, toY) === 1;
 }
 
 function isValidEatingTile(x, y) {
@@ -1257,23 +1399,6 @@ function isValidEatingTile(x, y) {
   const cell = state.world.cells[y][x];
   const tileInfo = getTileInfo(x, y);
   return tileInfo.walkable && cell.floor === "RM";
-}
-
-function tryPlaceCarriedJarAdjacent() {
-  if (state.character.inventario.item_carregado !== "JA") {
-    return false;
-  }
-
-  const target = getAdjacentJarPlacementTarget();
-  if (!target) {
-    return false;
-  }
-
-  state.world.cells[target.y][target.x].entity = "JA";
-  state.character.inventario.item_carregado = null;
-  state.uiDirty = true;
-  appendLog(`O NPC colocou um jarro em (${target.x}, ${target.y}). Esse tile agora bloqueia passagem.`);
-  return true;
 }
 
 function tryStoreCarriedJarInChest() {
@@ -1288,9 +1413,14 @@ function tryStoreCarriedJarInChest() {
 
   state.character.inventario.item_carregado = null;
   state.storage.chestStoredJars += 1;
+  clearJarPlan();
   state.uiDirty = true;
   appendLog(`O NPC guardou um jarro no bau. Total guardado: ${state.storage.chestStoredJars}.`);
   return true;
+}
+
+function clearJarPlan() {
+  state.jarPlan = null;
 }
 
 function isAdjacentToEntityToken(x, y, token) {
@@ -1366,18 +1496,10 @@ function performActivity(activityId, options = {}) {
 
 function createJarFromDecoration() {
   state.character.inventario.item_carregado = "JA";
+  clearJarPlan();
+  clearNpcRoute();
   state.uiDirty = true;
   appendLog("Um novo jarro foi criado.");
-
-  if (tryPlaceCarriedJarAdjacent()) {
-    return;
-  }
-
-  if (tryStoreCarriedJarInChest()) {
-    return;
-  }
-
-  appendLog("Nao havia tile RM adjacente livre. O NPC vai procurar o bau para guardar o jarro.");
 }
 
 function startActivityVisual(activity) {
