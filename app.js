@@ -112,20 +112,20 @@ const FAVORITE_OBJECTS = [
 ];
 
 const BORDER_TILE_PATHS = {
-  center: "assets/teste_chao_bordered/teste_chao_center.png",
-  walk_only_center: "assets/teste_chao_bordered/teste_chao_center_walk_only.png",
-  edge_top: "assets/teste_chao_bordered/teste_chao_edge_top.png",
-  edge_rgt: "assets/teste_chao_bordered/teste_chao_edge_rgt.png",
-  edge_bot: "assets/teste_chao_bordered/teste_chao_edge_bot.png",
-  edge_lft: "assets/teste_chao_bordered/teste_chao_edge_lft.png",
-  outer_top_lft: "assets/teste_chao_bordered/teste_chao_outer_top_lft.png",
-  outer_top_rgt: "assets/teste_chao_bordered/teste_chao_outer_top_rgt.png",
-  outer_bot_rgt: "assets/teste_chao_bordered/teste_chao_outer_bot_rgt.png",
-  outer_bot_lft: "assets/teste_chao_bordered/teste_chao_outer_bot_lft.png",
-  inner_top_lft: "assets/teste_chao_bordered/teste_chao_inner_top_lft.png",
-  inner_top_rgt: "assets/teste_chao_bordered/teste_chao_inner_top_rgt.png",
-  inner_bot_rgt: "assets/teste_chao_bordered/teste_chao_inner_bot_rgt.png",
-  inner_bot_lft: "assets/teste_chao_bordered/teste_chao_inner_bot_lft.png",
+  center: "assets/dungeon_bordered/teste_chao_center.png",
+  walk_only_center: "assets/dungeon_bordered/teste_chao_center_walk_only.png",
+  edge_top: "assets/dungeon_bordered/teste_chao_edge_top.png",
+  edge_rgt: "assets/dungeon_bordered/teste_chao_edge_rgt.png",
+  edge_bot: "assets/dungeon_bordered/teste_chao_edge_bot.png",
+  edge_lft: "assets/dungeon_bordered/teste_chao_edge_lft.png",
+  outer_top_lft: "assets/dungeon_bordered/teste_chao_outer_top_lft.png",
+  outer_top_rgt: "assets/dungeon_bordered/teste_chao_outer_top_rgt.png",
+  outer_bot_rgt: "assets/dungeon_bordered/teste_chao_outer_bot_rgt.png",
+  outer_bot_lft: "assets/dungeon_bordered/teste_chao_outer_bot_lft.png",
+  inner_top_lft: "assets/dungeon_bordered/teste_chao_inner_top_lft.png",
+  inner_top_rgt: "assets/dungeon_bordered/teste_chao_inner_top_rgt.png",
+  inner_bot_rgt: "assets/dungeon_bordered/teste_chao_inner_bot_rgt.png",
+  inner_bot_lft: "assets/dungeon_bordered/teste_chao_inner_bot_lft.png",
 };
 
 const NPC_SPRITES = {
