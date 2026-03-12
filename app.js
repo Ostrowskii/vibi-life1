@@ -160,6 +160,7 @@ const dom = {
   canvas: document.getElementById("game-canvas"),
   ageDisplay: document.getElementById("age-display"),
   yearTimer: document.getElementById("year-timer"),
+  timeButtons: Array.from(document.querySelectorAll("[data-time-scale]")),
   favoriteObject: document.getElementById("favorite-object"),
   statusGrid: document.getElementById("status-grid"),
   metaGrid: document.getElementById("meta-grid"),
@@ -205,6 +206,7 @@ const state = {
   needClockMs: 0,
   activityCooldownMs: 0,
   aiPauseMs: AI_DECISION_MS,
+  timeScale: 1,
   needCycles: 0,
   moveCount: 0,
   lastDirection: null,
@@ -237,6 +239,12 @@ async function bootstrap() {
 function bindUiEvents() {
   dom.copyMapButton?.addEventListener("click", () => {
     void handleCopyMapClick();
+  });
+
+  dom.timeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      setTimeScale(Number(button.dataset.timeScale || "1"));
+    });
   });
 }
 
@@ -422,8 +430,9 @@ function loop(timestamp) {
     state.lastFrameTimestamp = timestamp;
   }
 
-  const delta = Math.max(0, Math.round(timestamp - state.lastFrameTimestamp));
+  const realDelta = Math.max(0, Math.round(timestamp - state.lastFrameTimestamp));
   state.lastFrameTimestamp = timestamp;
+  const delta = Math.round(realDelta * state.timeScale);
   state.runtimeMs += delta;
   state.elapsedMs += delta;
   state.needClockMs += delta;
@@ -2298,7 +2307,11 @@ function renderLog() {
 
 function renderTime() {
   dom.ageDisplay.textContent = `${state.character.status.age}`;
-  dom.yearTimer.textContent = `proximo ano em ${formatRemainingTime(REAL_MS_PER_YEAR - state.elapsedMs)}`;
+  dom.yearTimer.textContent =
+    state.timeScale === 0
+      ? `pausado em ${formatRemainingTime(REAL_MS_PER_YEAR - state.elapsedMs)}`
+      : `proximo ano em ${formatRemainingTime(REAL_MS_PER_YEAR - state.elapsedMs)}`;
+  syncTimeButtons();
 }
 
 function formatRemainingTime(ms) {
@@ -2327,6 +2340,24 @@ function sample(items) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function setTimeScale(nextScale) {
+  const allowedScales = new Set([0, 1, 2, 5]);
+  if (!allowedScales.has(nextScale) || state.timeScale === nextScale) {
+    return;
+  }
+
+  state.timeScale = nextScale;
+  state.uiDirty = true;
+  appendLog(nextScale === 0 ? "Simulacao pausada." : `Velocidade alterada para x${nextScale}.`);
+}
+
+function syncTimeButtons() {
+  dom.timeButtons.forEach((button) => {
+    const buttonScale = Number(button.dataset.timeScale || "1");
+    button.classList.toggle("is-active", buttonScale === state.timeScale);
+  });
 }
 
 async function loadAssets() {
